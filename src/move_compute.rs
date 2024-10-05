@@ -1,15 +1,18 @@
+use crate::functions::*;
 
 const ROOK_MAGIC_NUMBER_SIZE: i32 = 14;
 const BISHOP_MAGIC_NUMBER_SIZE: i32 = 11;
 
-const ROOK_CACHE_ENTRY_SIZE: i32 = 1 << ROOK_MAGIC_NUMBER_SIZE;
+pub const ROOK_CACHE_ENTRY_SIZE: i32 = 1 << ROOK_MAGIC_NUMBER_SIZE;
 const BISHOP_CACHE_ENTRY_SIZE: i32 = 1 << BISHOP_MAGIC_NUMBER_SIZE;
 
-const ROOK_CACHE_SIZE: i32 = ROOK_CACHE_ENTRY_SIZE * 64;
+pub const ROOK_CACHE_SIZE: i32 = ROOK_CACHE_ENTRY_SIZE * 64;
 const BISHOP_CACHE_SIZE: i32 = BISHOP_CACHE_ENTRY_SIZE * 64;
 
 const ROOK_MAGIC_NUMBER_PUSH: i32 = 64 - ROOK_MAGIC_NUMBER_SIZE;
 const BISHOP_MAGIC_NUMBER_PUSH: i32 = 64 - BISHOP_MAGIC_NUMBER_SIZE;
+
+const RANDOM_BITBOARD_IDENTIFIER: u64 = 1298301209;
 
 // int rookMagicNumberNumSize = 1<<rookMagicNumberSize;
 // int bishopMagicNumberNumSize = 1<<bishopMagicNumberSize;
@@ -234,7 +237,7 @@ const fn get_queen_blockers_mask() -> [u64; 64]{
     return queen_blockers_mask;
 }
 
-pub fn get_blocker_combinations(bitboard: u64) -> Vec<u64>{
+pub const fn get_blocker_combinations(bitboard: u64) -> [u64; 20000]{
     let mut temp_bitboard: u64 = bitboard;
     let mut bits_num: u64 = 0;
 
@@ -245,14 +248,14 @@ pub fn get_blocker_combinations(bitboard: u64) -> Vec<u64>{
         bits_num += 1;
     }
 
-    let combination_num: u64 = 2 << bits_num;
-    let mut blocker_combinations = Vec::new();
+    let combination_num: u64 = 1 << bits_num;
+    let mut blocker_combinations:[u64;20000] = [RANDOM_BITBOARD_IDENTIFIER; 20000];
 
     let mut i : u64 = 0;
     while i < combination_num{
         let mut temp_bitboard: u64 = bitboard;
         let mut new_bitboard: u64 = 0;
-
+    
         let mut j: u64 = 0;
         while j < bits_num{
             // get the pos of the bit
@@ -266,7 +269,7 @@ pub fn get_blocker_combinations(bitboard: u64) -> Vec<u64>{
             temp_bitboard ^= 1 << least_bit;
             j += 1;
         }
-        blocker_combinations.push(new_bitboard);
+        blocker_combinations[i as usize] = new_bitboard;
         
         i += 1;
     }
@@ -274,7 +277,7 @@ pub fn get_blocker_combinations(bitboard: u64) -> Vec<u64>{
     return blocker_combinations;
 }
 
-pub fn get_rook_legal_moves(square: i32, blockers: u64) -> u64{
+pub const fn get_rook_legal_moves(square: i32, blockers: u64) -> u64{
     let mut bitboard: u64 = 0;
 
     let x: i32 = square % 8;
@@ -351,28 +354,39 @@ pub const ROOK_BLOCKERS_MASK: [u64; 64] = get_rook_blockers_mask();
 pub const BISHOP_BLOCKERS_MASK: [u64; 64] = get_bishop_blockers_mask();
 pub const QUEEN_BLOCKERS_MASK: [u64; 64] = get_queen_blockers_mask();
 
-fn get_rook_move_cache_index(square: i32, blockers: u64) -> usize{
+pub const fn get_rook_move_cache_index(square: i32, blockers: u64) -> usize{
     //     index of the square                index in the sub array section
-    return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_MAGIC_NUMBERS[square as usize] * blockers) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
+    return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
 }
 
-fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
+pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
     let mut rook_move_cache: [u64; ROOK_CACHE_SIZE as usize] = [0; ROOK_CACHE_SIZE as usize];
 
     let mut square: i32 = 0;
     
+    let mut counter: i32 = 0;
+
     while square < 64{
         let rook_blocker_mask: u64 = ROOK_BLOCKERS_MASK[square as usize];
-        let rook_blocker_combinations: Vec<u64> = get_blocker_combinations(rook_blocker_mask);
+        let rook_blocker_combinations: [u64; 20000] = get_blocker_combinations(rook_blocker_mask);
 
-        let rook_blocker_counter: i32 = 0;
+        let mut rook_blocker_counter: i32 = 0;
 
         // goes through all the blocker combinations in initialises them
-        while rook_blocker_counter < rook_blocker_combinations.len() as i32{
+        while rook_blocker_combinations[rook_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
             let rook_blocker_combination: u64 = rook_blocker_combinations[rook_blocker_counter as usize];
             let rook_legal_move: u64 = get_rook_legal_moves(square, rook_blocker_combination);
 
             let move_cache_index: usize = get_rook_move_cache_index(square, rook_blocker_combination);
+
+            // println!("move cache index: {}", move_cache_index);
+            if rook_move_cache[move_cache_index] != 0{
+
+                counter += 1;
+                if counter > 100{
+                    return rook_move_cache;
+                }
+            }
 
             // initialise it
             rook_move_cache[move_cache_index] = rook_legal_move;
@@ -386,4 +400,5 @@ fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
     return rook_move_cache;
 }
 
-pub static ROOK_LEGAL_MOVE_CACHE: [u64; ROOK_CACHE_SIZE as usize] = get_rook_legal_move_cache();
+#[allow(long_running_const_eval)]
+pub const ROOK_LEGAL_MOVE_CACHE: [u64; ROOK_CACHE_SIZE as usize] = get_rook_legal_move_cache();
