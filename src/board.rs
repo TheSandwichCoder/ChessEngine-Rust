@@ -1,6 +1,6 @@
 // BOARD ENCODING SCHEME
-// 0           0 0 0 0    0 0           0 0         
-// move turn   enpassant  white castle  black castle
+// 0        ...   0 0 0 0    0 0           0 0         
+// move turn      enpassant  white castle  black castle
 
 // enpassant : counting starts from  0 0 0 1
 
@@ -13,8 +13,13 @@ pub struct ChessBoard{
     piece_array: [u16; 64],
     board_info:u32,
 
-    white_piece_bitboard: u64,
-    black_piece_bitboard: u64,
+    pub white_piece_bitboard: u64,
+    pub black_piece_bitboard: u64,
+
+    pub check_mask: u64,
+    pub pin_mask: u64,
+
+    pub board_color: bool,
 
 }
 
@@ -25,6 +30,9 @@ fn create_empty_board() -> ChessBoard{
         board_info: 0,
         white_piece_bitboard: 0,
         black_piece_bitboard: 0,
+        check_mask: 0,
+        pin_mask: 0,
+        board_color: false,
     }
 }
 
@@ -50,6 +58,14 @@ pub fn print_board_info(chess_board: &ChessBoard){
     let mut chess_board_array: [char; 64] = ['_'; 64];
 
     let mut piece_bitboard_together: u64 = 1<<64 - 1;
+
+    if chess_board.board_info >> 31 == 1{
+        println!("To Move: White \n");
+    }
+    else{
+        println!("To Move: Black \n");
+
+    }
 
     println!("White Castle King: {}", chess_board.board_info & 8 > 0);
     println!("White Castle Queen: {}", chess_board.board_info & 4 > 0);
@@ -201,7 +217,38 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     }
 
     chess_board.board_info |= castle_priv;
-    chess_board.board_info |= move_turn<<9;
-
+    chess_board.board_info |= move_turn<<31;
+    chess_board.board_color = move_turn == 1;
+    
     return chess_board;
+}
+
+pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
+    let color: u32 = chess_board.board_info >> 31;
+
+
+    // white to move
+    if color == 1{
+        for piece_type in 0..6{
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type as usize];
+
+            if piece_type != 3{
+                continue;
+            }
+
+            while temp_piece_bitboard != 0{
+                let piece_square : u16 = temp_piece_bitboard.trailing_zeros().try_into().unwrap();
+
+                // add_rook_moves(move_vec, piece_square, chess_board.white_piece_bitboard, chess_board.black_piece_bitboard, 0, 0, 0);
+
+
+                temp_piece_bitboard ^= 1<<piece_square;
+            }
+        }
+        
+    }
+
+    else{
+
+    }
 }

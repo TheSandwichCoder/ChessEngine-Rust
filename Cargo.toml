@@ -3,4 +3,10 @@ name = "chess_rust"
 version = "0.1.0"
 edition = "2021"
 
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+	"-C", "link-arg=/STACK:8000000"
+]
+
 [dependencies]
+rand = "0.8.5"

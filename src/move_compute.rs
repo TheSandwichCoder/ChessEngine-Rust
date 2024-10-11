@@ -1,4 +1,23 @@
+// Move Encoding:
+// u16 
+// special(4)  to(6)  from(6)
+// 0000        000000 000000
+//
+// Special
+// 0 0 0 1 -> bishop -1
+// 0 0 1 0 -> knight -2
+// 0 0 1 1 -> rook -3
+// 0 1 0 0 -> queen -4
+// 0 1 0 1 -> white king castle left -5
+// 0 1 1 0 -> white king castle right -6
+// 0 1 1 1 -> black king castle left -7
+// 1 0 0 0 -> black king castle right -8
 use crate::functions::*;
+use crate::magic_numbers::*;
+use crate::board::*;
+use rand::Rng;
+use std::time::Instant;
+
 
 const ROOK_MAGIC_NUMBER_SIZE: i32 = 14;
 const BISHOP_MAGIC_NUMBER_SIZE: i32 = 11;
@@ -14,155 +33,90 @@ const BISHOP_MAGIC_NUMBER_PUSH: i32 = 64 - BISHOP_MAGIC_NUMBER_SIZE;
 
 const RANDOM_BITBOARD_IDENTIFIER: u64 = 1298301209;
 
-// int rookMagicNumberNumSize = 1<<rookMagicNumberSize;
-// int bishopMagicNumberNumSize = 1<<bishopMagicNumberSize;
-
-// int rookMagicNumberPush = 64-rookMagicNumberSize;
-// int bishopMagicNumberPush = 64-bishopMagicNumberSize;
-
-
-// rook: size 14
-const ROOK_MAGIC_NUMBERS:[u64; 64] = [
-    5448404644668614887,
-    7429541927353657341,
-    8327997435217010691,
-    8938367315950951252,
-    1592624865783187151,
-    14735398518802345370,
-    7383800330718064983,
-    12528622953315292328,
-    8998764742762812572,
-    1525762006122095376,
-    783325121587688660,
-    557101797949933871,
-    2885169928671381696,
-    8897354479193681189,
-    7324409022409279275,
-    16578604099016350383,
-    596237921986050726,
-    830651480625245235,
-    3012074197939646231,
-    17335198554382125613,
-    17034243820374513941,
-    3518569048515431009,
-    5044764137268079380,
-    3979835570931416807,
-    6337069399971536039,
-    7171604253467494139,
-    17102821407206619022,
-    8696639438320257623,
-    10549485283534449238,
-    13359384927437517500,
-    6547948396914745147,
-    538880567649511714,
-    15290906821300541491,
-    3736386743306093693,
-    12050271774257187884,
-    17908801163318505741,
-    11290357538719332012,
-    9776136378273040926,
-    2969502550575125102,
-    16861817747591319736,
-    3153482815394150428,
-    13227168744383770893,
-    1269827028785269815,
-    10127176719137706431,
-    11594231665730612520,
-    18038065282990883879,
-    2480306424537900056,
-    11051379579770875184,
-    668926372545163101,
-    6116844684778809798,
-    13606018635905067366,
-    10126631763441541386,
-    9109328921465274348,
-    15480569388139263100,
-    8480304660104374877,
-    3604968967170250906,
-    11838826006976676654,
-    15414647529949566389,
-    8390624376644560101,
-    3800585628858159354,
-    4265391351849429650,
-    12817858002029846986,
-    2707709488875334082,
-    5171488126276164202
-];
-    
-    
-// bishop: size 11
-const BISHOP_MAGIC_NUMBERS:[u64; 64] = [
-    4816202882398023937,
-    13267235174689453647,
-    6380310112784006984,
-    17849528126728750400,
-    359412490116528558,
-    6647449365250821669,
-    8681356469474740624,
-    8728753678196081980,
-    8348440887347500092,
-    13710290208257272619,
-    1045924646559550807,
-    14893878697663905604,
-    15964597724236281664,
-    14306407576948803988,
-    223300879286341787,
-    17695811888542785386,
-    13129716937366926425,
-    3427267930971339510,
-    2406511342307408714,
-    12030132820667459508,
-    14671230452877050860,
-    4886863664326768075,
-    10962767860182321371,
-    9734134652846336201,
-    15916511572152382939,
-    6005610919717011374,
-    15318553168282265942,
-    8953410291336286988,
-    1114719348885222519,
-    7287024262585315011,
-    10718942865949511186,
-    17553951193964710703,
-    12816472782639867024,
-    15480269189612857715,
-    15230257100345778826,
-    7735371921360245178,
-    7098328396060994145,
-    8709087112944869388,
-    1757543010345233921,
-    3798420857244561904,
-    4515144076193080075,
-    5721330932381388700,
-    7753228957941982476,
-    7756531331913882602,
-    17689033768369228966,
-    15363965789115115445,
-    15039615866405838874,
-    1598940977997147763,
-    12098379233742241649,
-    3818770509561324908,
-    12591460181784921765,
-    8314903529799055937,
-    11907703119236121047,
-    5502215958626712043,
-    16598400797456256977,
-    16011309478981238564,
-    11281171579754564078,
-    15567475772665900064,
-    9922726573404472482,
-    9238776751486017804,
-    12399267100135780775,
-    14116791706745139553,
-    3003651216789685006,
-    3184243539290100210
-];
-
 const HORIZONTAL_SLICE_BITBOARD : u64 = 0xFF00000000000000;
 const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
 const EDGE_MASK: u64 = 0xFF818181818181FF;
 
+// HEAVILY inspired by rust Pleco Engine
+#[derive(Copy, Clone)]
+pub struct SMagic {
+    pub ptr: *const u64,
+    pub mask: u64,
+    pub magic: u64,
+    pub shift: u32,
+}
 
+const fn get_knight_move_mask() -> [u64; 64]{
+    let mut bitboard_array: [u64; 64] = [0; 64];
+
+    let mut i: i32 = 0;
+    let move_x: [i32; 8] = [-1, 1, 2,2, 1,-1,-2,-2];
+    let move_y: [i32; 8] = [-2,-2,-1,1, 2, 2, 1,-1];
+
+    while i < 64{
+        let mut bitboard: u64 = 0;
+
+        let x: i32 = i % 8;
+        let y: i32 = i / 8;
+
+        let mut temp_x:i32;
+        let mut temp_y:i32;
+
+        let mut j:usize = 0;
+
+        while j < 8{
+            temp_x = x + move_x[j];
+            temp_y = y + move_y[j];
+
+            if temp_x >= 0 && temp_y >= 0 && temp_x < 8 && temp_y < 8{
+                bitboard |= 1 << (temp_y * 8 + temp_x);
+            }
+
+            j += 1;
+        }
+
+        bitboard_array[i as usize] = bitboard;
+        i += 1;
+    }
+
+    return bitboard_array;
+}
+
+const fn get_king_move_mask() -> [u64; 64]{
+    let mut bitboard_array: [u64; 64] = [0; 64];
+
+    let mut i: i32 = 0;
+    let move_x: [i32; 8] = [-1,0, 1, -1,1,-1,0,1];
+    let move_y: [i32; 8] = [-1,-1,-1,0, 0, 1,1,1];
+
+    while i < 64{
+        let mut bitboard: u64 = 0;
+
+        let x: i32 = i % 8;
+        let y: i32 = i / 8;
+
+        let mut temp_x:i32;
+        let mut temp_y:i32;
+
+        let mut j:usize = 0;
+
+        while j < 8{
+            temp_x = x + move_x[j];
+            temp_y = y + move_y[j];
+
+            if temp_x >= 0 && temp_y >= 0 && temp_x < 8 && temp_y < 8{
+                bitboard |= 1 << (temp_y * 8 + temp_x);
+            }
+
+            j += 1;
+        }
+
+        bitboard_array[i as usize] = bitboard;
+        i += 1;
+    }
+
+    return bitboard_array;
+}
 
 const fn get_rook_blockers_mask() -> [u64; 64]{
     let mut bitboard_array: [u64; 64] = [0; 64];
@@ -313,7 +267,7 @@ pub const fn get_rook_legal_moves(square: i32, blockers: u64) -> u64{
     return bitboard;
 }
 
-pub fn get_bishop_legal_moves(square: i32, blockers: u64) -> u64{
+pub const fn get_bishop_legal_moves(square: i32, blockers: u64) -> u64{
     let mut bitboard: u64 = 0;
 
     let x: i32 = square % 8;
@@ -354,20 +308,15 @@ pub const ROOK_BLOCKERS_MASK: [u64; 64] = get_rook_blockers_mask();
 pub const BISHOP_BLOCKERS_MASK: [u64; 64] = get_bishop_blockers_mask();
 pub const QUEEN_BLOCKERS_MASK: [u64; 64] = get_queen_blockers_mask();
 
-pub const fn get_rook_move_cache_index(square: i32, blockers: u64) -> usize{
-    //     index of the square                index in the sub array section
-    return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
-}
+pub const fn INITIALISE_ROOK_MOVE_CACHE() -> [u64; ROOK_MOVE_CACHE_SIZE]{
 
-pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
-    let mut rook_move_cache: [u64; ROOK_CACHE_SIZE as usize] = [0; ROOK_CACHE_SIZE as usize];
+    let mut rook_move_cache: [u64; ROOK_MOVE_CACHE_SIZE as usize] = [0; ROOK_MOVE_CACHE_SIZE as usize];
 
-    let mut square: i32 = 0;
-    
-    let mut counter: i32 = 0;
-
+    let mut square: usize = 0;
+    let mut square_index:usize = 0;
     while square < 64{
-        let rook_blocker_mask: u64 = ROOK_BLOCKERS_MASK[square as usize];
+        let rook_blocker_mask: u64 = ROOK_BLOCKERS_MASK[square];
+        let rook_magic_number_push: u8 = ROOK_RAW_SHIFTS[square];
         let rook_blocker_combinations: [u64; 20000] = get_blocker_combinations(rook_blocker_mask);
 
         let mut rook_blocker_counter: i32 = 0;
@@ -375,18 +324,11 @@ pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
         // goes through all the blocker combinations in initialises them
         while rook_blocker_combinations[rook_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
             let rook_blocker_combination: u64 = rook_blocker_combinations[rook_blocker_counter as usize];
-            let rook_legal_move: u64 = get_rook_legal_moves(square, rook_blocker_combination);
+            let rook_legal_move: u64 = get_rook_legal_moves(square as i32, rook_blocker_combination);
 
-            let move_cache_index: usize = get_rook_move_cache_index(square, rook_blocker_combination);
+            let local_cache_index: u64 =  (rook_blocker_combination.wrapping_mul(ROOK_RAW_MAGICS[square])) >> rook_magic_number_push;
 
-            // println!("move cache index: {}", move_cache_index);
-            if rook_move_cache[move_cache_index] != 0{
-
-                counter += 1;
-                if counter > 100{
-                    return rook_move_cache;
-                }
-            }
+            let move_cache_index: usize = square_index + (local_cache_index as usize);
 
             // initialise it
             rook_move_cache[move_cache_index] = rook_legal_move;
@@ -394,11 +336,537 @@ pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
             rook_blocker_counter += 1;
         }
 
+        square_index += 1 << (64 - rook_magic_number_push);
+
         square += 1;
     }
 
     return rook_move_cache;
 }
 
+pub const fn INITIALISE_BISHOP_MOVE_CACHE() -> [u64; BISHOP_MOVE_CACHE_SIZE]{
+
+    let mut bishop_move_cache: [u64; BISHOP_MOVE_CACHE_SIZE as usize] = [0; BISHOP_MOVE_CACHE_SIZE as usize];
+
+    let mut square: usize = 0;
+    let mut square_index:usize = 0;
+    while square < 64{
+        let bishop_blocker_mask: u64 = BISHOP_BLOCKERS_MASK[square];
+        let bishop_magic_number_push: u8 = BISHOP_RAW_SHIFTS[square];
+        let bishop_blocker_combinations: [u64; 20000] = get_blocker_combinations(bishop_blocker_mask);
+
+        let mut bishop_blocker_counter: i32 = 0;
+
+        // goes through all the blocker combinations in initialises them
+        while bishop_blocker_combinations[bishop_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
+            let bishop_blocker_combination: u64 = bishop_blocker_combinations[bishop_blocker_counter as usize];
+            let bishop_legal_move: u64 = get_bishop_legal_moves(square as i32, bishop_blocker_combination);
+
+            let local_cache_index: u64 =  (bishop_blocker_combination.wrapping_mul(BISHOP_RAW_MAGICS[square])) >> bishop_magic_number_push;
+
+            let move_cache_index: usize = square_index + (local_cache_index as usize);
+
+            // initialise it
+            bishop_move_cache[move_cache_index] = bishop_legal_move;
+
+            bishop_blocker_counter += 1;
+        }
+
+        square_index += 1 << (64 - bishop_magic_number_push);
+
+        square += 1;
+    }
+
+    return bishop_move_cache;
+}
+
 #[allow(long_running_const_eval)]
-pub const ROOK_LEGAL_MOVE_CACHE: [u64; ROOK_CACHE_SIZE as usize] = get_rook_legal_move_cache();
+pub const ROOK_MOVE_CACHE : [u64 ; ROOK_MOVE_CACHE_SIZE] = INITIALISE_ROOK_MOVE_CACHE();
+pub const ROOK_SMAGICS : [SMagic; 64] = INITIALISE_ROOK_MAGICS();
+
+pub const BISHOP_MOVE_CACHE : [u64; BISHOP_MOVE_CACHE_SIZE] = INITIALISE_BISHOP_MOVE_CACHE();
+pub const BISHOP_SMAGICS : [SMagic; 64] = INITIALISE_BISHOP_MAGICS();
+
+pub const fn INITIALISE_ROOK_MAGICS() -> [SMagic; 64]{
+    let mut index : usize = 0;
+
+    let mut move_ptr : usize = 0;
+
+    let mut rook_magics : [SMagic; 64] = [SMagic{
+        ptr:ROOK_MOVE_CACHE.as_ptr(), 
+        mask:0, 
+        magic:0, 
+        shift:0
+    };64];
+
+    while index < 64{
+        rook_magics[index] = SMagic{
+            ptr: unsafe{ROOK_MOVE_CACHE.as_ptr().add(move_ptr)},
+            mask: ROOK_BLOCKERS_MASK[index],
+            magic: ROOK_RAW_MAGICS[index],
+            shift: ROOK_RAW_SHIFTS[index] as u32,
+        };
+        move_ptr += 1 << (64-ROOK_RAW_SHIFTS[index]);
+        index += 1;
+    }
+
+    return rook_magics;
+}
+
+pub const fn INITIALISE_BISHOP_MAGICS() -> [SMagic; 64]{
+    let mut index : usize = 0;
+
+    let mut move_ptr : usize = 0;
+
+    let mut bishop_magics : [SMagic; 64] = [SMagic{
+        ptr:BISHOP_MOVE_CACHE.as_ptr(), 
+        mask:0, 
+        magic:0, 
+        shift:0
+    };64];
+
+    while index < 64{
+        bishop_magics[index] = SMagic{
+            ptr: unsafe{BISHOP_MOVE_CACHE.as_ptr().add(move_ptr)},
+            mask: BISHOP_BLOCKERS_MASK[index],
+            magic: BISHOP_RAW_MAGICS[index],
+            shift: BISHOP_RAW_SHIFTS[index] as u32,
+        };
+        move_ptr += 1 << (64-BISHOP_RAW_SHIFTS[index]);
+        index += 1;
+    }
+
+    return bishop_magics;
+}
+
+// masks for movement / direction
+pub const KNIGHT_MOVE_MASK: [u64; 64] = get_knight_move_mask();
+pub const KING_MOVE_MASK: [u64; 64] = get_king_move_mask();
+
+// pub const fn get_rook_move_cache_index_const(square: i32, blockers: u64) -> usize{
+//     //     index of the square                index in the sub array section
+//     return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_RAW_MAGICS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
+// }
+
+// pub fn get_rook_move_cache_index(square: i32, blockers: u64) -> usize{
+//     return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
+// }
+
+// pub const fn get_bishop_move_cache_index_const(square: i32, blockers: u64) -> usize{
+//     //     index of the square                index in the sub array section
+//     return (((square * BISHOP_CACHE_ENTRY_SIZE) as u64) + ((BISHOP_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> BISHOP_MAGIC_NUMBER_PUSH)) as usize;
+// }
+
+// pub fn get_bishop_move_cache_index(square: i32, blockers: u64) -> usize{
+//     return (((square * BISHOP_CACHE_ENTRY_SIZE) as u64) + ((BISHOP_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> BISHOP_MAGIC_NUMBER_PUSH)) as usize;
+// }
+
+pub fn get_Magic_Number(blocker_combinations: [u64; 20000]) -> (u64,u32){ 
+    
+    let mut best_magic_number:u64 = 0;
+    let mut best_shift_size:u32 = 0;
+
+    for shift_size in 49..64{
+        let numberSize: u32 = 64 - shift_size;
+
+        for _attempt_number in 0..1000000{
+            let mut success = true;
+            let random_magic = rand::thread_rng().gen_range(0..(!0));
+
+            let mut temp_array= vec![false; 1<<numberSize as usize];
+
+            let mut index = 0;
+            while blocker_combinations[index as usize] != RANDOM_BITBOARD_IDENTIFIER{
+
+                let bitboard_index = (blocker_combinations[index].wrapping_mul(random_magic)) >> shift_size;  
+
+                // blocker collision
+                if temp_array[bitboard_index as usize] == true{
+                    success = false;
+                    break;
+                }
+
+                temp_array[bitboard_index as usize] = true;
+
+
+                index += 1;
+            }
+
+            if success{
+                
+                best_magic_number = random_magic;
+                best_shift_size = shift_size;
+                break;
+            }
+        }
+
+        // could not find magic number
+        if best_shift_size != shift_size{
+            break;
+        }
+
+    }
+    println!("0x{:X}|{}", best_magic_number, best_shift_size);
+
+    return (best_magic_number, best_shift_size);
+}
+
+// pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
+//     let mut rook_move_cache: [u64; ROOK_CACHE_SIZE as usize] = [0; ROOK_CACHE_SIZE as usize];
+
+//     let mut square: i32 = 0;
+    
+//     while square < 64{
+//         let rook_blocker_mask: u64 = ROOK_BLOCKERS_MASK[square as usize];
+//         let rook_blocker_combinations: [u64; 20000] = get_blocker_combinations(rook_blocker_mask);
+
+//         let mut rook_blocker_counter: i32 = 0;
+
+//         // goes through all the blocker combinations in initialises them
+//         while rook_blocker_combinations[rook_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
+//             let rook_blocker_combination: u64 = rook_blocker_combinations[rook_blocker_counter as usize];
+//             let rook_legal_move: u64 = get_rook_legal_moves(square, rook_blocker_combination);
+
+//             let move_cache_index: usize = get_rook_move_cache_index_const(square, rook_blocker_combination);
+
+//             // initialise it
+//             rook_move_cache[move_cache_index] = rook_legal_move;
+
+//             rook_blocker_counter += 1;
+//         }
+
+//         square += 1;
+//     }
+
+//     return rook_move_cache;
+// }
+
+// pub const fn get_bishop_legal_move_cache() -> [u64; BISHOP_CACHE_SIZE as usize]{
+//     let mut bishop_move_cache: [u64; BISHOP_CACHE_SIZE as usize] = [0; BISHOP_CACHE_SIZE as usize];
+
+//     let mut square: i32 = 0;
+    
+//     while square < 64{
+//         let bishop_blocker_mask: u64 = BISHOP_BLOCKERS_MASK[square as usize];
+//         let bishop_blocker_combinations: [u64; 20000] = get_blocker_combinations(bishop_blocker_mask);
+
+//         let mut bishop_blocker_counter: i32 = 0;
+
+//         // goes through all the blocker combinations in initialises them
+//         while bishop_blocker_combinations[bishop_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
+//             let bishop_blocker_combination: u64 = bishop_blocker_combinations[bishop_blocker_counter as usize];
+//             let bishop_legal_move: u64 = get_bishop_legal_moves(square, bishop_blocker_combination);
+
+//             let move_cache_index: usize = get_bishop_move_cache_index_const(square, bishop_blocker_combination);
+
+//             // initialise it
+//             bishop_move_cache[move_cache_index] = bishop_legal_move;
+
+//             bishop_blocker_counter += 1;
+//         }
+
+//         square += 1;
+//     }
+
+//     return bishop_move_cache;
+// }
+
+// #[allow(long_running_const_eval)]
+// pub const ROOK_LEGAL_MOVE_CACHE: [u64; ROOK_CACHE_SIZE as usize] = get_rook_legal_move_cache();
+
+// #[allow(long_running_const_eval)]
+// pub const BISHOP_LEGAL_MOVE_CACHE: [u64; BISHOP_CACHE_SIZE as usize] = get_bishop_legal_move_cache();
+
+
+// piece movement functions
+
+fn get_move_code(from_square: u8, to_square: u8) -> u16{
+    return (from_square as u16) | ((to_square as u16) << 6);
+}
+
+fn get_move_code_special(from_square: u8, to_square: u8, special:u8) -> u16{
+    return (from_square as u16) | ((to_square as u16) << 6) | ((special as u16) << 12);
+}
+
+fn add_moves(
+    move_vector: &mut Vec<u16>,
+    from_square: u8,
+    mut move_bitboard: u64,
+){
+  while move_bitboard != 0{
+    let to_square : u8 = move_bitboard.trailing_zeros().try_into().unwrap();
+
+    move_vector.push(get_move_code(from_square, to_square));
+
+    move_bitboard ^= 1<<to_square;
+  }
+}
+
+// rook and bishop move bitboard gen
+pub fn get_rook_move_bitboard(
+    square: usize,
+    mut blockers: u64,
+) -> u64{
+    let magic_entry: &SMagic = unsafe { ROOK_SMAGICS.get_unchecked(square) };
+    blockers &= magic_entry.mask;
+    blockers = blockers.wrapping_mul(magic_entry.magic);
+    blockers = blockers.wrapping_shr(magic_entry.shift);
+    
+    return unsafe { *(magic_entry.ptr).add(blockers as usize) };
+}
+
+pub fn get_bishop_move_bitboard(
+    square: usize,
+    mut blockers: u64,
+) -> u64{
+    let magic_entry: &SMagic = unsafe { BISHOP_SMAGICS.get_unchecked(square) };
+    blockers &= magic_entry.mask;
+    blockers = blockers.wrapping_mul(magic_entry.magic);
+    blockers = blockers.wrapping_shr(magic_entry.shift);
+    
+    return unsafe { *(magic_entry.ptr).add(blockers as usize) };
+}
+
+pub fn get_queen_move_bitboard(
+    square: usize,
+    mut blockers: u64,
+) -> u64{
+
+    return get_bishop_move_bitboard(square, blockers) | get_rook_move_bitboard(square, blockers);
+}
+
+// Sliding Pieces
+
+pub fn add_rook_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8, 
+){
+    let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
+
+    let friendly_blockers : u64;
+    if chess_board.board_color{
+        friendly_blockers = chess_board.white_piece_bitboard;
+    }
+    else{
+        friendly_blockers = chess_board.black_piece_bitboard;
+    }
+
+    let mut rook_move_bitboard: u64 = get_rook_move_bitboard(square as usize, blockers) & !friendly_blockers;
+    
+    // pin check
+    if (chess_board.pin_mask & 1<<square)!= 0{
+        // do this later thx
+    }
+
+    // "check" check
+    if chess_board.check_mask != 0{
+        rook_move_bitboard &= chess_board.check_mask;
+    }
+
+    add_moves(move_vector, square, rook_move_bitboard);
+}
+
+pub fn add_bishop_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>,
+    square: u8,
+){
+    let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
+
+    let friendly_blockers : u64;
+    if chess_board.board_color{
+        friendly_blockers = chess_board.white_piece_bitboard;
+    }
+    else{
+        friendly_blockers = chess_board.black_piece_bitboard;
+    }
+
+    let mut bishop_move_bitboard: u64 = get_bishop_move_bitboard(square as usize, blockers) & !friendly_blockers;
+
+
+    // pin check
+    if (chess_board.pin_mask & 1<<square)!= 0{
+        // do this later thx
+    }
+
+    // "check" check
+    if chess_board.check_mask != 0{
+        bishop_move_bitboard &= chess_board.check_mask;
+    }
+
+    add_moves(move_vector, square, bishop_move_bitboard);
+}
+
+pub fn add_queen_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8, 
+){
+    let blockers : u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
+    
+    let friendly_blockers: u64;
+
+    // get friendly blockers
+    if chess_board.board_color{
+        friendly_blockers = chess_board.white_piece_bitboard;
+    }
+    else{
+        friendly_blockers = chess_board.black_piece_bitboard;
+    } 
+
+    let mut queen_move_bitboard: u64 = (get_bishop_move_bitboard(square as usize, blockers) | get_rook_move_bitboard(square as usize, blockers)) & !friendly_blockers;
+
+    // pin check
+    if (chess_board.pin_mask & 1<<square)!= 0{
+        // do this later thx
+    }
+
+    // "check" check
+    if chess_board.check_mask != 0{
+        queen_move_bitboard &= chess_board.check_mask;
+    }
+
+    add_moves(move_vector, square, queen_move_bitboard);
+}
+
+pub fn add_knight_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8, 
+){
+    // the knight is not pinned
+    if (chess_board.pin_mask & 1<<square) == 0{
+        let friendly_blockers: u64;
+
+        // get friendly blockers
+        if chess_board.board_color{
+            friendly_blockers = chess_board.white_piece_bitboard;
+        }
+        else{
+            friendly_blockers = chess_board.black_piece_bitboard;
+        } 
+
+        let mut move_bitboard:u64 = KNIGHT_MOVE_MASK[square as usize] & !friendly_blockers; 
+
+        // "check" check
+        if chess_board.check_mask != 0{
+            move_bitboard &= chess_board.check_mask;
+        }
+
+        add_moves(move_vector, square, move_bitboard);
+    }
+}
+
+pub fn add_king_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8, 
+){
+    let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & chess_board.check_mask;
+    
+    add_moves(move_vector, square, move_bitboard);
+}
+
+fn add_pawn_promotion_moves(from_square: u8, to_square: u8, move_vector: &mut Vec<u16>){
+    move_vector.push(get_move_code_special(from_square, to_square, 1));
+    move_vector.push(get_move_code_special(from_square, to_square, 2));
+    move_vector.push(get_move_code_special(from_square, to_square, 3));
+    move_vector.push(get_move_code_special(from_square, to_square, 4));
+}
+
+pub fn add_pawn_moves(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8, 
+){
+    let blockers = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
+
+    // white
+    if chess_board.board_color{
+        // pawn double move row
+        if square >= 48 && square <= 55{
+            // nothing blocking it from moving double
+            if 1 << (square - 16) & blockers == 0{
+                move_vector.push(get_move_code(square, square - 16));
+            }
+        }
+
+        // nothing blocking it from moving forward
+        if 1 << (square - 8) & blockers == 0{
+            // promotion square
+            if square - 8 <= 7{
+                add_pawn_promotion_moves(square, square-8, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square - 8));
+            }
+        }
+
+        // can capture piece on the right
+        if (square % 8 < 7) && 1 << (square - 7) & blockers != 0{
+            // promotion square
+            if square - 7 <= 7{
+                add_pawn_promotion_moves(square, square-7, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square - 7));
+            }
+        }
+
+        // can capture piece on the left
+        if (square % 8 > 1) && 1 << (square - 9) & blockers != 0{
+            // promotion square
+            if square - 9 <= 7{
+                add_pawn_promotion_moves(square, square-9, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square - 9));
+            }
+        }
+    }
+
+    // black
+    else{
+        // pawn double move row
+        if square >= 8 && square <= 15{
+            // nothing blocking it from moving double
+            if 1 << (square + 16) & blockers == 0{
+                move_vector.push(get_move_code(square, square + 16));
+            }
+        }
+
+        // nothing blocking it from moving forward
+        if 1 << (square + 8) & blockers == 0{
+            // promotion square
+            if square + 8 >= 56{
+                add_pawn_promotion_moves(square, square+8, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square + 8));
+            }
+        }
+
+        // can capture piece on the left
+        if (square % 8 > 1) && 1 << (square + 7) & blockers != 0{
+            // promotion square
+            if square + 7 >= 56{
+                add_pawn_promotion_moves(square, square+7, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square + 7));
+            }
+        }
+
+        // can capture piece on the right
+        if (square % 8 < 7) && 1 << (square + 9) & blockers != 0{
+            // promotion square
+            if square + 9 >= 56{
+                add_pawn_promotion_moves(square, square + 9, move_vector);
+            }
+            else{
+                move_vector.push(get_move_code(square, square + 9));
+            }
+        }
+    }
+}
