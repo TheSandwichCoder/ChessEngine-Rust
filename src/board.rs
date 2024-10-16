@@ -5,19 +5,35 @@
 // enpassant : counting starts from  0 0 0 1
 
 use crate::move_compute::*;
+use crate::functions::*;
 
 const PIECE_TYPE_STRING: &str = "PBNRQKpbnrqk/";
+const ENPASSANT_CLEAR_MASK: u16 = 0xFF0F;
 
+const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8); 6] = [
+    add_pawn_moves, 
+    add_bishop_moves, 
+    add_knight_moves,
+    add_rook_moves,
+    add_queen_moves,
+    add_king_moves
+];
+
+#[derive(Copy, Clone)]
 pub struct ChessBoard{
-    piece_bitboards: [u64; 12],
-    piece_array: [u16; 64],
-    board_info:u32,
+    pub piece_bitboards: [u64; 12],
+    pub piece_array: [u8; 64],
+    pub board_info:u16,
 
     pub white_piece_bitboard: u64,
     pub black_piece_bitboard: u64,
+    pub all_piece_bitboard: u64,
 
     pub check_mask: u64,
+    pub is_double_check: bool,
+
     pub pin_mask: u64,
+    pub attack_mask: u64,
 
     pub board_color: bool,
 
@@ -30,8 +46,12 @@ fn create_empty_board() -> ChessBoard{
         board_info: 0,
         white_piece_bitboard: 0,
         black_piece_bitboard: 0,
+        all_piece_bitboard: 0,
+
         check_mask: 0,
+        is_double_check: false,
         pin_mask: 0,
+        attack_mask: 0,
         board_color: false,
     }
 }
@@ -43,7 +63,7 @@ fn get_piece_type_color(piece_type: &i32) -> bool{
 fn add_piece_to_board(chess_board :&mut ChessBoard, piece_type: i32, piece_square: i32){
     let piece_bitboard: u64 = 1 << piece_square;
     chess_board.piece_bitboards[piece_type as usize] |= piece_bitboard;
-    chess_board.piece_array[piece_square as usize] = (piece_type + 1) as u16;
+    chess_board.piece_array[piece_square as usize] = (piece_type + 1) as u8;
 
     if get_piece_type_color(&piece_type){
         chess_board.white_piece_bitboard |= piece_bitboard;
@@ -51,6 +71,24 @@ fn add_piece_to_board(chess_board :&mut ChessBoard, piece_type: i32, piece_squar
     else{
         chess_board.black_piece_bitboard |= piece_bitboard;
     }
+
+    chess_board.all_piece_bitboard |= piece_bitboard;
+}
+
+pub fn print_board(chess_board: &ChessBoard){
+    for i in 0..64{
+        if i % 8 == 0{
+            println!("");
+        }
+        let piece_type: u8 = chess_board.piece_array[i];
+
+        if piece_type == 0{
+            print!("_ ");
+            continue;
+        }
+
+        print!("{} ", PIECE_TYPE_STRING.chars().nth((piece_type-1) as usize).unwrap());
+    }    
 }
 
 pub fn print_board_info(chess_board: &ChessBoard){
@@ -59,7 +97,7 @@ pub fn print_board_info(chess_board: &ChessBoard){
 
     let mut piece_bitboard_together: u64 = 1<<64 - 1;
 
-    if chess_board.board_info >> 31 == 1{
+    if chess_board.board_color{
         println!("To Move: White \n");
     }
     else{
@@ -98,7 +136,7 @@ pub fn print_board_info(chess_board: &ChessBoard){
         if i % 8 == 0{
             println!("");
         }
-        let piece_type: u16 = chess_board.piece_array[i];
+        let piece_type: u8 = chess_board.piece_array[i];
 
         if piece_type == 0{
             print!("_ ");
@@ -140,7 +178,33 @@ pub fn print_board_info(chess_board: &ChessBoard){
         }
     }
 
-    
+    print!("\n\nAll Pieces Bitboard");
+    for i in 0..64{
+        let bitboard_mask: u64 = 1 << i;
+        
+        if i % 8 == 0{
+            println!("");
+        }
+
+        if bitboard_mask & chess_board.all_piece_bitboard != 0{
+            print!("1 ");
+        }
+        else{
+            print!("_ ");
+        }
+    }
+
+
+    print!("\n\nPiece Attack Bitboard");
+
+    print_bitboard(chess_board.attack_mask);
+
+    print!("\n\nPiece Check Bitboard");
+    println!("\nDouble Check: {}", chess_board.is_double_check);
+    print_bitboard(chess_board.check_mask);
+
+    print!("\n\nPiece Pin Bitboard");
+    print_bitboard(chess_board.pin_mask);
 
     print!("\n\nPiece Bitboard Overlap: {}", piece_bitboard_together > 0)
 }
@@ -148,8 +212,8 @@ pub fn print_board_info(chess_board: &ChessBoard){
 pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     let mut chess_board: ChessBoard = create_empty_board();
 
-    let mut move_turn: u32 = 0;
-    let mut castle_priv: u32 = 0;
+    let mut move_turn: u16 = 0;
+    let mut castle_priv: u16 = 0;
 
     let mut counter : i32 = 0;
     let mut fen_string_part: i32 = 0;
@@ -217,38 +281,335 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     }
 
     chess_board.board_info |= castle_priv;
-    chess_board.board_info |= move_turn<<31;
+    chess_board.board_info |= move_turn<<15;
     chess_board.board_color = move_turn == 1;
+
+    update_board(&mut chess_board);
     
     return chess_board;
 }
 
+// DOES NOT return a new board
+pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
+    let from_square: u8 = (mv & MOVE_DECODER_MASK) as u8;
+    let to_square: u8 = ((mv >> 6) & MOVE_DECODER_MASK) as u8;
+
+    let from_square_bitboard: u64 = 1 << from_square;
+    let to_square_bitboard: u64 = 1 << to_square;
+
+    let special: u8 = ((mv >> 12) & MOVE_DECODER_MASK) as u8;
+
+    let piece_type: usize = chess_board.piece_array[from_square as usize] as usize;
+    let piece_color: bool = get_piece_type_color(&(piece_type as i32));
+
+    // normal movement
+    chess_board.piece_bitboards[piece_type-1] ^= from_square_bitboard;
+    chess_board.piece_bitboards[piece_type-1] ^= to_square_bitboard;
+
+    chess_board.piece_array[from_square as usize] = 0;
+    chess_board.piece_array[to_square as usize] = piece_type as u8;
+
+    if piece_color{
+        chess_board.white_piece_bitboard ^= from_square_bitboard;
+        chess_board.white_piece_bitboard ^= to_square_bitboard;
+    }
+    else{
+        chess_board.black_piece_bitboard ^= from_square_bitboard;
+        chess_board.black_piece_bitboard ^= to_square_bitboard;
+    }
+
+    chess_board.all_piece_bitboard ^= from_square_bitboard;
+    chess_board.all_piece_bitboard ^= to_square_bitboard;
+
+    // special movement
+    if special > 0{
+        if special == 2{
+            chess_board.board_info &= ENPASSANT_CLEAR_MASK;
+            
+            // add new possible en passant
+            chess_board.board_info |= ((from_square % 8 + 1) as u16) << 8;
+        }
+    }
+
+    // flip the baord color
+    chess_board.board_color = !chess_board.board_color;
+    
+}
+
+// update board stuff
+
+pub fn update_board_attack_mask(chess_board: &mut ChessBoard){
+    // reset it 
+    chess_board.attack_mask = 0;
+
+    // if white, we should check black attacks
+    if !chess_board.board_color{
+        for piece_type in 0..6{
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+
+            while temp_piece_bitboard != 0{
+                let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
+
+                if piece_type == 0{
+                    chess_board.attack_mask |= WHITE_PAWN_ATTACK_MASK[square];
+                }
+                else if piece_type == 1{
+                    chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+                }
+                else if piece_type == 2{
+                    chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+                }
+                else if piece_type == 3{
+                    chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+                }
+                else if piece_type == 4{
+                    chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+                }
+                else if piece_type == 5{
+                    chess_board.attack_mask |= KING_MOVE_MASK[square];
+                }
+
+                temp_piece_bitboard ^= 1<<square;
+            }
+        }    
+    }
+    else{
+        for piece_type in 6..12{
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+
+            while temp_piece_bitboard != 0{
+                let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
+
+                if piece_type == 6{
+                    chess_board.attack_mask |= BLACK_PAWN_ATTACK_MASK[square];
+                }
+                else if piece_type == 7{
+                    chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+                }
+                else if piece_type == 8{
+                    chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+                }
+                else if piece_type == 9{
+                    chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+                }
+                else if piece_type == 10{
+                    chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+                }
+                else if piece_type == 11{
+                    chess_board.attack_mask |= KING_MOVE_MASK[square];
+                }
+
+                temp_piece_bitboard ^= 1<<square;
+            }
+        }
+    }
+}
+
+pub fn update_board_check_mask(chess_board: &mut ChessBoard){
+    // reset it 
+    chess_board.check_mask = 0;
+
+    let king_bitboard: u64;
+    let enemy_blockers: u64;
+    let piece_type_check_offset: usize;
+    
+    if chess_board.board_color{
+        king_bitboard = chess_board.piece_bitboards[5];
+        enemy_blockers = chess_board.black_piece_bitboard;
+        piece_type_check_offset = 6;
+    }
+    else{
+        king_bitboard = chess_board.piece_bitboards[11];
+        enemy_blockers = chess_board.white_piece_bitboard;
+        piece_type_check_offset = 0;
+    }
+
+    // there are no checks
+    if chess_board.attack_mask & king_bitboard == 0{
+        return;
+    }
+
+    let king_square:usize = king_bitboard.trailing_zeros() as usize;
+
+    let king_check_direction_mask: u64 = get_queen_move_bitboard(king_square, chess_board.all_piece_bitboard);
+    let mut check_piece_mask: u64 = king_check_direction_mask & enemy_blockers;
+    
+    let mut check_num: u8 = 0;
+
+    // consider checking pieces as part of check mask
+    chess_board.check_mask |= check_piece_mask;
+
+    while check_piece_mask != 0{
+        
+        let enemy_checker_square : usize = check_piece_mask.trailing_zeros() as usize;
+        let enemy_checker_type: u8 = chess_board.piece_array[enemy_checker_square as usize] - (piece_type_check_offset as u8) - 1;
+        let direction: bool = get_direction(enemy_checker_square as u8, king_square as u8);
+        
+        if direction{
+            // if the piece is a rook or a queen
+            if enemy_checker_type == 3 || enemy_checker_type == 4{
+                chess_board.check_mask |= king_check_direction_mask & get_rook_move_bitboard(enemy_checker_square, chess_board.all_piece_bitboard) & ROOK_MOVE_MASK[king_square];
+            }
+        }
+        else{
+            // if the piece is a bishop or a queen
+            if enemy_checker_type == 1 || enemy_checker_type == 4{
+                chess_board.check_mask |= king_check_direction_mask & get_bishop_move_bitboard(enemy_checker_square, chess_board.all_piece_bitboard) & BISHOP_MOVE_MASK[king_square];
+            }
+        }
+
+        check_piece_mask ^= 1 << enemy_checker_square;
+        check_num += 1;
+    }
+    
+    let knight_check_mask : u64 = KNIGHT_MOVE_MASK[king_square] & chess_board.piece_bitboards[2 + piece_type_check_offset];
+    
+    // knight checks
+    if knight_check_mask != 0{
+        chess_board.check_mask |= knight_check_mask;
+        check_num += 1;
+    }
+
+    if check_num >= 2{
+        chess_board.is_double_check = true;
+    }
+}
+
+pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
+    // reset it
+    chess_board.pin_mask = 0;
+
+    let king_bitboard: u64;
+    let enemy_blockers: u64;
+    let friendly_blockers: u64;
+
+    let piece_type_pin_offset: usize;
+    
+    if chess_board.board_color{
+        king_bitboard = chess_board.piece_bitboards[5];
+        enemy_blockers = chess_board.black_piece_bitboard;
+        friendly_blockers = chess_board.white_piece_bitboard;
+        piece_type_pin_offset = 6;
+    }
+    else{
+        king_bitboard = chess_board.piece_bitboards[11];
+        enemy_blockers = chess_board.white_piece_bitboard;
+        friendly_blockers = chess_board.black_piece_bitboard;
+        piece_type_pin_offset = 0;
+    }
+
+    let king_square:usize = king_bitboard.trailing_zeros() as usize;
+
+    let king_pin_direction_mask: u64 = get_queen_move_bitboard(king_square, enemy_blockers);
+    let king_rook_check_direction_mask: u64;
+    let king_bishop_check_direction_mask: u64;
+    
+    let mut possible_pinners: u64 = king_pin_direction_mask & enemy_blockers;
+    
+    // checks whether there are even any pinners
+    if possible_pinners != 0{
+        king_rook_check_direction_mask = get_rook_move_bitboard(king_square, chess_board.all_piece_bitboard);
+        king_bishop_check_direction_mask = get_bishop_move_bitboard(king_square, chess_board.all_piece_bitboard);
+        
+        while possible_pinners != 0{
+            let enemy_square: usize = possible_pinners.trailing_zeros() as usize;
+            let enemy_piece_type: u8 = chess_board.piece_array[enemy_square] - (piece_type_pin_offset as u8) - 1;
+            let direction: bool = get_direction(enemy_square as u8, king_square as u8);
+                     
+            possible_pinners ^= 1 << enemy_square;
+
+            if direction{
+
+                // the enemy piece is not a rook or queen 
+                if enemy_piece_type != 3 && enemy_piece_type != 4{
+                    continue;
+                }
+
+                // get the friendly blockers that are pinned
+                let pin_square_bitboard: u64 = get_rook_move_bitboard(enemy_square, chess_board.all_piece_bitboard) & king_rook_check_direction_mask & friendly_blockers;
+    
+                if pin_square_bitboard != 0{
+                    let pin_square: usize = pin_square_bitboard.trailing_zeros() as usize;
+                    let pin_piece_type: usize = (chess_board.piece_array[pin_square] as usize) + piece_type_pin_offset - 7;
+    
+                    // piece is a rook or queen
+                    if pin_piece_type == 3 || pin_piece_type == 4{
+                        chess_board.pin_mask |= get_rook_move_bitboard(pin_square, chess_board.all_piece_bitboard) & ROOK_MOVE_MASK[king_square];
+    
+                    }
+                    
+                    chess_board.pin_mask |= pin_square_bitboard;
+                    
+                }
+            }
+            else{
+                // the enemy piece is not a bishop or queen 
+                if enemy_piece_type != 1 && enemy_piece_type != 4{
+                    continue;
+                }
+
+                // get the friendly blockers that are pinned
+                let pin_square_bitboard: u64 = get_bishop_move_bitboard(enemy_square, chess_board.all_piece_bitboard) & king_bishop_check_direction_mask & friendly_blockers;
+    
+                if pin_square_bitboard != 0{
+                    let pin_square: usize = pin_square_bitboard.trailing_zeros() as usize;
+
+                    // the weird syntax here is to flip the piece_type_pin_offset since we want friendly pieces
+                    let pin_piece_type: usize = (chess_board.piece_array[pin_square] as usize) + piece_type_pin_offset - 7;
+                    
+                    // piece is a bishop or a queen
+                    if pin_piece_type == 1 || pin_piece_type == 4{
+                        chess_board.pin_mask |= get_bishop_move_bitboard(pin_square, chess_board.all_piece_bitboard) & BISHOP_MOVE_MASK[king_square];
+    
+                    }
+                    
+                    chess_board.pin_mask |= pin_square_bitboard;
+                }
+            }
+        }
+        
+    }
+}
+
+pub fn update_board(chess_board: &mut ChessBoard){
+    update_board_attack_mask(chess_board);
+    update_board_check_mask(chess_board);
+    update_board_pin_mask(chess_board);
+}
+
 pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
-    let color: u32 = chess_board.board_info >> 31;
 
 
     // white to move
-    if color == 1{
+    if chess_board.board_color{
+        // base piece movement
         for piece_type in 0..6{
-            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type as usize];
-
-            if piece_type != 3{
-                continue;
-            }
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
 
             while temp_piece_bitboard != 0{
-                let piece_square : u16 = temp_piece_bitboard.trailing_zeros().try_into().unwrap();
+                let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                // add_rook_moves(move_vec, piece_square, chess_board.white_piece_bitboard, chess_board.black_piece_bitboard, 0, 0, 0);
+                // add_pawn_moves(chess_board, &mut move_vec, square);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square);
 
-
-                temp_piece_bitboard ^= 1<<piece_square;
+                temp_piece_bitboard ^= 1<<square;
             }
         }
         
     }
 
     else{
+        for piece_type in 6..11{
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
 
+            while temp_piece_bitboard != 0{
+                let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
+
+                // add_pawn_moves(chess_board, &mut move_vec, square);
+                MOVE_FUNCTIONS_ARRAY[piece_type-6](chess_board, move_vec, square);
+
+                temp_piece_bitboard ^= 1<<square;
+            }
+        }
     }
 }

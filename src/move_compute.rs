@@ -4,14 +4,23 @@
 // 0000        000000 000000
 //
 // Special
-// 0 0 0 1 -> bishop -1
-// 0 0 1 0 -> knight -2
-// 0 0 1 1 -> rook -3
-// 0 1 0 0 -> queen -4
-// 0 1 0 1 -> white king castle left -5
-// 0 1 1 0 -> white king castle right -6
-// 0 1 1 1 -> black king castle left -7
-// 1 0 0 0 -> black king castle right -8
+
+// pawn stuff
+// 0 0 1 0 -> pawn double
+// 0 0 1 1 -> en passant
+
+// pawn promotion
+// 0 1 0 1 -> bishop - 5
+// 0 1 1 0 -> knight - 6
+// 0 1 1 1 -> rook - 7
+// 1 0 0 0 -> queen - 8
+
+// castling
+// 1 0 0 1 -> white king castle left - 9
+// 1 0 1 0 -> white king castle right - 10
+// 1 0 1 1 -> black king castle left - 11
+// 1 1 0 0 -> black king castle right - 12
+
 use crate::functions::*;
 use crate::magic_numbers::*;
 use crate::board::*;
@@ -37,6 +46,8 @@ const HORIZONTAL_SLICE_BITBOARD : u64 = 0xFF00000000000000;
 const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
 const EDGE_MASK: u64 = 0xFF818181818181FF;
 
+pub const MOVE_DECODER_MASK:u16 = 0x3F;
+
 // HEAVILY inspired by rust Pleco Engine
 #[derive(Copy, Clone)]
 pub struct SMagic {
@@ -46,7 +57,48 @@ pub struct SMagic {
     pub shift: u32,
 }
 
-const fn get_knight_move_mask() -> [u64; 64]{
+const fn GET_PAWN_ATTACK_MASK(color: bool) -> [u64; 64]{
+    let mut attack_array : [u64; 64] = [0; 64];
+    let mut counter : u8 = 0;
+
+    while counter < 64{
+        let y_pos : u8 = counter / 8;
+        let x_pos : u8 = counter % 8;
+        let mut attack_bitboard: u64 = 0;
+        // skip the end rows    
+        if y_pos == 0 || y_pos == 7{
+            counter += 1;
+            continue;
+        }
+
+        // near the right side
+        if x_pos != 7{
+            // white
+            if color{
+                attack_bitboard |= 1 << (counter - 7);
+            }
+            else{
+                attack_bitboard |= 1 << (counter + 9);
+            }
+        }
+        
+        if x_pos != 0{
+            if color{
+                attack_bitboard |= 1 << (counter - 9);
+            }
+            else{
+                attack_bitboard |= 1 << (counter + 7);
+            }
+        }
+
+        attack_array[counter as usize] = attack_bitboard;
+        counter += 1;
+    }
+
+    return attack_array;
+}
+
+const fn GET_KNIGHT_MOVE_MASK() -> [u64; 64]{
     let mut bitboard_array: [u64; 64] = [0; 64];
 
     let mut i: i32 = 0;
@@ -82,7 +134,7 @@ const fn get_knight_move_mask() -> [u64; 64]{
     return bitboard_array;
 }
 
-const fn get_king_move_mask() -> [u64; 64]{
+const fn GET_KING_MOVE_MASK() -> [u64; 64]{
     let mut bitboard_array: [u64; 64] = [0; 64];
 
     let mut i: i32 = 0;
@@ -118,7 +170,73 @@ const fn get_king_move_mask() -> [u64; 64]{
     return bitboard_array;
 }
 
-const fn get_rook_blockers_mask() -> [u64; 64]{
+const fn GET_ROOK_MOVE_MASK() -> [u64; 64]{
+    let mut bitboard_array: [u64; 64] = [0; 64];
+
+    let mut i: i32 = 0;
+    while i < 64{
+        let x : i32 = i % 8;
+        let y: i32 = i / 8;
+
+        bitboard_array[(63-i) as usize] = ((HORIZONTAL_SLICE_BITBOARD >> (y * 8)) | (VERTICLE_SLICE_BITBOARD >> x)) & !(1<<(63-i));
+        i += 1;
+    }
+
+    return bitboard_array;
+}
+
+const fn GET_BISHOP_MOVE_MASK() -> [u64; 64]{
+    let mut bitboard_array: [u64; 64] = [0; 64];
+
+    let mut i: i32 = 0;
+    while i < 64{
+        let mut bitboard: u64 = 0;
+
+        let x: i32 = i % 8;
+        let y: i32 = i / 8;
+
+        let x_vec : [i32; 4] = [1, 1, -1, -1];
+        let y_vec : [i32; 4] = [1, -1, 1, -1];
+
+        let mut j: i32 = 0;
+        while j < 4{
+            let mut temp_x: i32 = x;
+            let mut temp_y: i32 = y;
+
+            while temp_x >= 0 && temp_y >= 0 && temp_x < 8 && temp_y < 8{
+                bitboard |= 1 << (temp_y * 8 + temp_x);
+                temp_x += x_vec[j as usize];
+                temp_y += y_vec[j as usize];
+            }
+            j += 1;
+        }
+        
+        // get rid of the piece pos
+        bitboard &= !(1 << i);
+
+        bitboard_array[i as usize] = bitboard;
+        i += 1;
+    }
+
+    return bitboard_array;
+}
+
+const fn GET_QUEEN_MOVE_MASK() -> [u64; 64]{
+    let rook_blocker_mask: [u64; 64] = GET_ROOK_MOVE_MASK();
+    let bishop_blocker_mask: [u64; 64] = GET_BISHOP_MOVE_MASK();
+    let mut queen_blockers_mask: [u64; 64] = [0; 64];
+
+    let mut i : i32 = 0;
+
+    while i < 64{
+        queen_blockers_mask[i as usize] = rook_blocker_mask[i as usize] | bishop_blocker_mask[i as usize];
+        i += 1;
+    }
+
+    return queen_blockers_mask;
+}
+
+const fn GET_ROOK_BLOCKER_MASK() -> [u64; 64]{
     let mut bitboard_array: [u64; 64] = [0; 64];
 
     let strict_hor_slice_bitboard = 0x7E00000000000000;
@@ -137,7 +255,7 @@ const fn get_rook_blockers_mask() -> [u64; 64]{
     return bitboard_array;
 }
 
-const fn get_bishop_blockers_mask() -> [u64; 64]{
+const fn GET_BISHOP_BLOCKER_MASK() -> [u64; 64]{
     let mut bitboard_array: [u64; 64] = [0; 64];
 
     let mut i: i32 = 0;
@@ -176,9 +294,9 @@ const fn get_bishop_blockers_mask() -> [u64; 64]{
     return bitboard_array;
 }
 
-const fn get_queen_blockers_mask() -> [u64; 64]{
-    let rook_blocker_mask: [u64; 64] = get_rook_blockers_mask();
-    let bishop_blocker_mask: [u64; 64] = get_bishop_blockers_mask();
+const fn GET_QUEEN_BLOCKER_MASK() -> [u64; 64]{
+    let rook_blocker_mask: [u64; 64] = GET_ROOK_BLOCKER_MASK();
+    let bishop_blocker_mask: [u64; 64] = GET_BISHOP_BLOCKER_MASK();
     let mut queen_blockers_mask: [u64; 64] = [0; 64];
 
     let mut i : i32 = 0;
@@ -190,6 +308,8 @@ const fn get_queen_blockers_mask() -> [u64; 64]{
 
     return queen_blockers_mask;
 }
+
+
 
 pub const fn get_blocker_combinations(bitboard: u64) -> [u64; 20000]{
     let mut temp_bitboard: u64 = bitboard;
@@ -304,9 +424,11 @@ pub const fn get_bishop_legal_moves(square: i32, blockers: u64) -> u64{
 }
 
 // these are the masks to identify the important blockers
-pub const ROOK_BLOCKERS_MASK: [u64; 64] = get_rook_blockers_mask();
-pub const BISHOP_BLOCKERS_MASK: [u64; 64] = get_bishop_blockers_mask();
-pub const QUEEN_BLOCKERS_MASK: [u64; 64] = get_queen_blockers_mask();
+pub const ROOK_BLOCKERS_MASK: [u64; 64] = GET_ROOK_BLOCKER_MASK();
+pub const BISHOP_BLOCKERS_MASK: [u64; 64] = GET_BISHOP_BLOCKER_MASK();
+pub const QUEEN_BLOCKERS_MASK: [u64; 64] = GET_QUEEN_BLOCKER_MASK();
+
+
 
 pub const fn INITIALISE_ROOK_MOVE_CACHE() -> [u64; ROOK_MOVE_CACHE_SIZE]{
 
@@ -440,26 +562,14 @@ pub const fn INITIALISE_BISHOP_MAGICS() -> [SMagic; 64]{
 }
 
 // masks for movement / direction
-pub const KNIGHT_MOVE_MASK: [u64; 64] = get_knight_move_mask();
-pub const KING_MOVE_MASK: [u64; 64] = get_king_move_mask();
+pub const WHITE_PAWN_ATTACK_MASK: [u64; 64] = GET_PAWN_ATTACK_MASK(true);
+pub const BLACK_PAWN_ATTACK_MASK: [u64; 64] = GET_PAWN_ATTACK_MASK(false);
 
-// pub const fn get_rook_move_cache_index_const(square: i32, blockers: u64) -> usize{
-//     //     index of the square                index in the sub array section
-//     return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_RAW_MAGICS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
-// }
-
-// pub fn get_rook_move_cache_index(square: i32, blockers: u64) -> usize{
-//     return (((square * ROOK_CACHE_ENTRY_SIZE) as u64) + ((ROOK_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> ROOK_MAGIC_NUMBER_PUSH)) as usize;
-// }
-
-// pub const fn get_bishop_move_cache_index_const(square: i32, blockers: u64) -> usize{
-//     //     index of the square                index in the sub array section
-//     return (((square * BISHOP_CACHE_ENTRY_SIZE) as u64) + ((BISHOP_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> BISHOP_MAGIC_NUMBER_PUSH)) as usize;
-// }
-
-// pub fn get_bishop_move_cache_index(square: i32, blockers: u64) -> usize{
-//     return (((square * BISHOP_CACHE_ENTRY_SIZE) as u64) + ((BISHOP_MAGIC_NUMBERS[square as usize].wrapping_mul(blockers)) >> BISHOP_MAGIC_NUMBER_PUSH)) as usize;
-// }
+pub const KNIGHT_MOVE_MASK: [u64; 64] = GET_KNIGHT_MOVE_MASK();
+pub const KING_MOVE_MASK: [u64; 64] = GET_KING_MOVE_MASK();
+pub const ROOK_MOVE_MASK: [u64; 64] = GET_ROOK_MOVE_MASK();
+pub const BISHOP_MOVE_MASK: [u64; 64] = GET_BISHOP_MOVE_MASK();
+pub const QUEEN_MOVE_MASK: [u64; 64] = GET_QUEEN_MOVE_MASK();
 
 pub fn get_Magic_Number(blocker_combinations: [u64; 20000]) -> (u64,u32){ 
     
@@ -511,73 +621,6 @@ pub fn get_Magic_Number(blocker_combinations: [u64; 20000]) -> (u64,u32){
     return (best_magic_number, best_shift_size);
 }
 
-// pub const fn get_rook_legal_move_cache() -> [u64; ROOK_CACHE_SIZE as usize]{
-//     let mut rook_move_cache: [u64; ROOK_CACHE_SIZE as usize] = [0; ROOK_CACHE_SIZE as usize];
-
-//     let mut square: i32 = 0;
-    
-//     while square < 64{
-//         let rook_blocker_mask: u64 = ROOK_BLOCKERS_MASK[square as usize];
-//         let rook_blocker_combinations: [u64; 20000] = get_blocker_combinations(rook_blocker_mask);
-
-//         let mut rook_blocker_counter: i32 = 0;
-
-//         // goes through all the blocker combinations in initialises them
-//         while rook_blocker_combinations[rook_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
-//             let rook_blocker_combination: u64 = rook_blocker_combinations[rook_blocker_counter as usize];
-//             let rook_legal_move: u64 = get_rook_legal_moves(square, rook_blocker_combination);
-
-//             let move_cache_index: usize = get_rook_move_cache_index_const(square, rook_blocker_combination);
-
-//             // initialise it
-//             rook_move_cache[move_cache_index] = rook_legal_move;
-
-//             rook_blocker_counter += 1;
-//         }
-
-//         square += 1;
-//     }
-
-//     return rook_move_cache;
-// }
-
-// pub const fn get_bishop_legal_move_cache() -> [u64; BISHOP_CACHE_SIZE as usize]{
-//     let mut bishop_move_cache: [u64; BISHOP_CACHE_SIZE as usize] = [0; BISHOP_CACHE_SIZE as usize];
-
-//     let mut square: i32 = 0;
-    
-//     while square < 64{
-//         let bishop_blocker_mask: u64 = BISHOP_BLOCKERS_MASK[square as usize];
-//         let bishop_blocker_combinations: [u64; 20000] = get_blocker_combinations(bishop_blocker_mask);
-
-//         let mut bishop_blocker_counter: i32 = 0;
-
-//         // goes through all the blocker combinations in initialises them
-//         while bishop_blocker_combinations[bishop_blocker_counter as usize] != RANDOM_BITBOARD_IDENTIFIER{
-//             let bishop_blocker_combination: u64 = bishop_blocker_combinations[bishop_blocker_counter as usize];
-//             let bishop_legal_move: u64 = get_bishop_legal_moves(square, bishop_blocker_combination);
-
-//             let move_cache_index: usize = get_bishop_move_cache_index_const(square, bishop_blocker_combination);
-
-//             // initialise it
-//             bishop_move_cache[move_cache_index] = bishop_legal_move;
-
-//             bishop_blocker_counter += 1;
-//         }
-
-//         square += 1;
-//     }
-
-//     return bishop_move_cache;
-// }
-
-// #[allow(long_running_const_eval)]
-// pub const ROOK_LEGAL_MOVE_CACHE: [u64; ROOK_CACHE_SIZE as usize] = get_rook_legal_move_cache();
-
-// #[allow(long_running_const_eval)]
-// pub const BISHOP_LEGAL_MOVE_CACHE: [u64; BISHOP_CACHE_SIZE as usize] = get_bishop_legal_move_cache();
-
-
 // piece movement functions
 
 fn get_move_code(from_square: u8, to_square: u8) -> u16{
@@ -586,6 +629,15 @@ fn get_move_code(from_square: u8, to_square: u8) -> u16{
 
 fn get_move_code_special(from_square: u8, to_square: u8, special:u8) -> u16{
     return (from_square as u16) | ((to_square as u16) << 6) | ((special as u16) << 12);
+}
+
+pub fn is_move_normal(mv: u16) -> bool{
+    return mv < 4096;
+}
+
+// Horizontal: true  Diagonal: false
+pub fn get_direction(square1: u8, square2: u8) -> bool{
+    return (square1 % 8 == square2 % 8) || (square1/8 == square2/8);
 }
 
 fn add_moves(
@@ -629,7 +681,7 @@ pub fn get_bishop_move_bitboard(
 
 pub fn get_queen_move_bitboard(
     square: usize,
-    mut blockers: u64,
+    blockers: u64,
 ) -> u64{
 
     return get_bishop_move_bitboard(square, blockers) | get_rook_move_bitboard(square, blockers);
@@ -639,24 +691,27 @@ pub fn get_queen_move_bitboard(
 
 pub fn add_rook_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
-    square: u8, 
+    move_vector: &mut Vec<u16>,
+    square: u8,
 ){
     let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
 
-    let friendly_blockers : u64;
+    let king_square: u8;
+    let friendly_blockers: u64;
     if chess_board.board_color{
+        king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
         friendly_blockers = chess_board.white_piece_bitboard;
     }
     else{
+        king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
         friendly_blockers = chess_board.black_piece_bitboard;
     }
 
     let mut rook_move_bitboard: u64 = get_rook_move_bitboard(square as usize, blockers) & !friendly_blockers;
-    
+
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
-        // do this later thx
+        rook_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize];
     }
 
     // "check" check
@@ -675,11 +730,14 @@ pub fn add_bishop_moves(
     let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
 
     let friendly_blockers : u64;
+    let king_square: u8;
     if chess_board.board_color{
         friendly_blockers = chess_board.white_piece_bitboard;
+        king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
     }
     else{
         friendly_blockers = chess_board.black_piece_bitboard;
+        king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
     }
 
     let mut bishop_move_bitboard: u64 = get_bishop_move_bitboard(square as usize, blockers) & !friendly_blockers;
@@ -687,7 +745,7 @@ pub fn add_bishop_moves(
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
-        // do this later thx
+        bishop_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize];
     }
 
     // "check" check
@@ -706,20 +764,29 @@ pub fn add_queen_moves(
     let blockers : u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
     
     let friendly_blockers: u64;
+    let king_square: u8;
 
     // get friendly blockers
     if chess_board.board_color{
         friendly_blockers = chess_board.white_piece_bitboard;
+        king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
     }
     else{
         friendly_blockers = chess_board.black_piece_bitboard;
+        king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
     } 
 
     let mut queen_move_bitboard: u64 = (get_bishop_move_bitboard(square as usize, blockers) | get_rook_move_bitboard(square as usize, blockers)) & !friendly_blockers;
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
-        // do this later thx
+        if get_direction(king_square, square){
+            queen_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize];
+        }
+        else{
+            queen_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize];
+        }
+
     }
 
     // "check" check
@@ -763,7 +830,15 @@ pub fn add_king_moves(
     move_vector: &mut Vec<u16>, 
     square: u8, 
 ){
-    let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & chess_board.check_mask;
+    let friendly_blockers: u64;
+    if chess_board.board_color{
+        friendly_blockers = chess_board.white_piece_bitboard;
+    }
+    else{
+        friendly_blockers = chess_board.black_piece_bitboard;
+    }
+
+    let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & !chess_board.attack_mask & !friendly_blockers;
     
     add_moves(move_vector, square, move_bitboard);
 }
