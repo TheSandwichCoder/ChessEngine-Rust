@@ -1,6 +1,6 @@
 // BOARD ENCODING SCHEME
-// 0        ...   0 0 0 0    0 0           0 0         
-// move turn      enpassant  white castle  black castle
+//  0 0 0 0    0 0           0 0         
+//  enpassant  white castle  black castle
 
 // enpassant : counting starts from  0 0 0 1
 
@@ -8,7 +8,17 @@ use crate::move_compute::*;
 use crate::functions::*;
 
 const PIECE_TYPE_STRING: &str = "PBNRQKpbnrqk/";
+
 const ENPASSANT_CLEAR_MASK: u16 = 0xFF0F;
+
+pub const BLACK_CASTLE_LEFT_BLOCKER_MASK: u64 = 0xE;
+pub const BLACK_CASTLE_RIGHT_BLOCKER_MASK: u64 = 0x60;
+pub const BLACK_CASTLE_LEFT_ATTACK_MASK: u64 = 0xC;
+
+pub const WHITE_CASTLE_LEFT_BLOCKER_MASK: u64 = BLACK_CASTLE_LEFT_BLOCKER_MASK << 56;
+pub const WHITE_CASTLE_RIGHT_BLOCKER_MASK: u64 = BLACK_CASTLE_RIGHT_BLOCKER_MASK << 56;
+pub const WHITE_CASTLE_LEFT_ATTACK_MASK: u64 = BLACK_CASTLE_LEFT_ATTACK_MASK << 56;
+
 
 const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8); 6] = [
     add_pawn_moves, 
@@ -102,13 +112,13 @@ pub fn print_board_info(chess_board: &ChessBoard){
     }
     else{
         println!("To Move: Black \n");
-
     }
 
     println!("White Castle King: {}", chess_board.board_info & 8 > 0);
     println!("White Castle Queen: {}", chess_board.board_info & 4 > 0);
     println!("Black Castle King: {}", chess_board.board_info & 2 > 0);
     println!("Black Castle Queen: {}", chess_board.board_info & 1 > 0);
+    println!("En Passant: {}", chess_board.board_info >> 4);
 
     print!("\n\nPiece Bitboard:");
     for i in 0..12{
@@ -217,6 +227,7 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
 
     let mut counter : i32 = 0;
     let mut fen_string_part: i32 = 0;
+    let mut enpassant_square: u16 = 0;
 
     for p in fen_string.chars() {
         if p == ' '{
@@ -271,7 +282,11 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
 
         // fen - en passant
         else if fen_string_part == 3{
-            // uhhh i'll do this later. Thanks future me
+            // some idiot decided to represent enpassant with a target square
+            if !p.is_numeric(){
+                // 'b' - 'a' is 1
+                enpassant_square = (p as u16) - ('a' as u16) + 1;
+            }            
         }
 
         // fen - fifty move rule
@@ -281,8 +296,9 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     }
 
     chess_board.board_info |= castle_priv;
-    chess_board.board_info |= move_turn<<15;
+    // chess_board.board_info |= move_turn<<15;
     chess_board.board_color = move_turn == 1;
+    chess_board.board_info |= enpassant_square << 4;
 
     update_board(&mut chess_board);
     
@@ -411,16 +427,19 @@ pub fn update_board_check_mask(chess_board: &mut ChessBoard){
 
     let king_bitboard: u64;
     let enemy_blockers: u64;
+    let enemy_directional_pieces: u64;
     let piece_type_check_offset: usize;
     
     if chess_board.board_color{
         king_bitboard = chess_board.piece_bitboards[5];
         enemy_blockers = chess_board.black_piece_bitboard;
+        enemy_directional_pieces = chess_board.piece_bitboards[1] | chess_board.piece_bitboards[3] | chess_board.piece_bitboards[4];
         piece_type_check_offset = 6;
     }
     else{
         king_bitboard = chess_board.piece_bitboards[11];
         enemy_blockers = chess_board.white_piece_bitboard;
+        enemy_directional_pieces = chess_board.piece_bitboards[7] | chess_board.piece_bitboards[9] | chess_board.piece_bitboards[10];
         piece_type_check_offset = 0;
     }
 
@@ -432,7 +451,7 @@ pub fn update_board_check_mask(chess_board: &mut ChessBoard){
     let king_square:usize = king_bitboard.trailing_zeros() as usize;
 
     let king_check_direction_mask: u64 = get_queen_move_bitboard(king_square, chess_board.all_piece_bitboard);
-    let mut check_piece_mask: u64 = king_check_direction_mask & enemy_blockers;
+    let mut check_piece_mask: u64 = king_check_direction_mask & enemy_directional_pieces;
     
     let mut check_num: u8 = 0;
 
@@ -467,6 +486,20 @@ pub fn update_board_check_mask(chess_board: &mut ChessBoard){
     // knight checks
     if knight_check_mask != 0{
         chess_board.check_mask |= knight_check_mask;
+        check_num += 1;
+    }
+
+    // pawn checks
+    let pawn_check_mask : u64;
+    if chess_board.board_color{
+        pawn_check_mask = WHITE_PAWN_ATTACK_MASK[king_square] & chess_board.piece_bitboards[6];
+    }
+    else{
+        pawn_check_mask = BLACK_PAWN_ATTACK_MASK[king_square] & chess_board.piece_bitboards[0];
+    }
+
+    if pawn_check_mask != 0{
+        chess_board.check_mask |= pawn_check_mask;
         check_num += 1;
     }
 
@@ -520,7 +553,7 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
 
             if direction{
 
-                // the enemy piece is not a rook or queen 
+                // the enemy piece(pinner) is not a rook or queen 
                 if enemy_piece_type != 3 && enemy_piece_type != 4{
                     continue;
                 }
@@ -535,15 +568,32 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
                     // piece is a rook or queen
                     if pin_piece_type == 3 || pin_piece_type == 4{
                         chess_board.pin_mask |= get_rook_move_bitboard(pin_square, chess_board.all_piece_bitboard) & ROOK_MOVE_MASK[king_square];
-    
                     }
-                    
+
+                    // piece is a pawn
+                    else if pin_piece_type == 0{
+                        if chess_board.board_color{
+                            chess_board.pin_mask |= 1 << (pin_square-8);
+                            
+                            if pin_square - 16 >= 0{
+                                chess_board.pin_mask |= 1<< (pin_square - 16);
+                            }
+                        }
+                        else{
+                            chess_board.pin_mask |= 1 << (pin_square + 8);
+
+                            if pin_square + 16 <= 63{
+                                chess_board.pin_mask |= 1 << (pin_square + 16);
+                            }
+                        }
+                    }
+
                     chess_board.pin_mask |= pin_square_bitboard;
-                    
                 }
             }
+            
             else{
-                // the enemy piece is not a bishop or queen 
+                // the enemy piece(pinner) is not a bishop or queen 
                 if enemy_piece_type != 1 && enemy_piece_type != 4{
                     continue;
                 }
@@ -560,7 +610,30 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
                     // piece is a bishop or a queen
                     if pin_piece_type == 1 || pin_piece_type == 4{
                         chess_board.pin_mask |= get_bishop_move_bitboard(pin_square, chess_board.all_piece_bitboard) & BISHOP_MOVE_MASK[king_square];
-    
+                    }
+                    
+                    // piece is a pawn
+                    // diagonal checks for pawns is literally only for enpassnat
+                    // which I find pretty funny... what a waste
+                    else if pin_piece_type == 0{
+                        if chess_board.board_color{
+                            // piece is on the left
+                            if king_square % 8 < pin_square % 8{
+                                chess_board.pin_mask |= 1 << (pin_square - 9);
+                            }
+                            else{
+                                chess_board.pin_mask |= 1 << (pin_square - 7);
+                            }
+                        }
+                        else{
+                            // piece is on the left
+                            if king_square % 8 < pin_square % 8{
+                                chess_board.pin_mask |= 1 << (pin_square + 7);
+                            }
+                            else{
+                                chess_board.pin_mask |= 1 << (pin_square + 9);
+                            }
+                        }
                     }
                     
                     chess_board.pin_mask |= pin_square_bitboard;
@@ -578,38 +651,140 @@ pub fn update_board(chess_board: &mut ChessBoard){
 }
 
 pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
-
-
     // white to move
+
+    let piece_color_offset: usize;
+
     if chess_board.board_color{
-        // base piece movement
+        piece_color_offset = 0;
+    }
+    else{
+        piece_color_offset = 6;
+    }
+
+    // standard movement
+
+    if !chess_board.is_double_check{
         for piece_type in 0..6{
-            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type + piece_color_offset];
 
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                // add_pawn_moves(chess_board, &mut move_vec, square);
                 MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square);
 
                 temp_piece_bitboard ^= 1<<square;
             }
         }
-        
+    }
+    else{
+        // double check only consider king movement 
+
+        let king_square:u8 = chess_board.piece_bitboards[5+piece_color_offset].trailing_zeros() as u8;
+
+        MOVE_FUNCTIONS_ARRAY[5](chess_board, move_vec, king_square);
+
+        // can break early
+        return;
+    }
+    
+
+    // handle castling
+    // make sure king is not in check
+    if chess_board.check_mask == 0{
+        if chess_board.board_color{
+
+            // castle left is possible
+            if chess_board.board_info & 0x8 != 0  {
+                // no attack squares - no pieces - not in check
+                if (chess_board.all_piece_bitboard & WHITE_CASTLE_LEFT_BLOCKER_MASK == 0) && (chess_board.attack_mask & WHITE_CASTLE_LEFT_ATTACK_MASK == 0){
+                    move_vec.push(GET_MOVE_CODE_SPECIAL(60, 58, 9));
+                } 
+            }
+            
+            // castle right is possible
+            if chess_board.board_info & 0x4 != 0{
+                // no attack squares or blockers
+                if (chess_board.all_piece_bitboard|chess_board.attack_mask) & WHITE_CASTLE_RIGHT_BLOCKER_MASK == 0{
+                    move_vec.push(GET_MOVE_CODE_SPECIAL(60, 62, 10));
+                }
+            }
+        }
+        else{
+            // castle left is possible
+            if chess_board.board_info & 0x2 != 0  {
+                // no attack squares - no pieces - not in check
+                if (chess_board.all_piece_bitboard & BLACK_CASTLE_LEFT_BLOCKER_MASK == 0) && (chess_board.attack_mask & BLACK_CASTLE_LEFT_ATTACK_MASK == 0){
+                    move_vec.push(GET_MOVE_CODE_SPECIAL(4, 2, 11));
+                }
+            }
+            
+            // castle right is possible
+            if chess_board.board_info & 0x1 != 0{
+                if (chess_board.all_piece_bitboard|chess_board.attack_mask) & BLACK_CASTLE_RIGHT_BLOCKER_MASK == 0{
+                    move_vec.push(GET_MOVE_CODE_SPECIAL(4, 6, 12));
+                }
+            }
+        }
     }
 
-    else{
-        for piece_type in 6..11{
-            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+    // handle enpassant
+    let enpassant_square_x: usize = (chess_board.board_info >> 4) as usize;
 
-            while temp_piece_bitboard != 0{
-                let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
+    if enpassant_square_x != 0{
+        
+        let mut enpassant_piece_bitboard: u64;
+        let enpassant_to_square: usize;
+        let king_square: u8;
+        
+        if chess_board.board_color{
+            // this is really ugly, but it avoids me making a new cache just for enpassant
+            // gets the pawns that can enpassant
+            enpassant_piece_bitboard = WHITE_PAWN_ATTACK_MASK[31+enpassant_square_x] & chess_board.piece_bitboards[0];
+            enpassant_to_square = 15 + enpassant_square_x;
+            king_square = chess_board.piece_array[5].trailing_zeros() as u8;
+        }
+        else{
+            enpassant_piece_bitboard = WHITE_PAWN_ATTACK_MASK[39+enpassant_square_x] & chess_board.piece_bitboards[6];
+            enpassant_to_square = 39 + enpassant_square_x;
+            king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
+        }
 
-                // add_pawn_moves(chess_board, &mut move_vec, square);
-                MOVE_FUNCTIONS_ARRAY[piece_type-6](chess_board, move_vec, square);
+        while enpassant_piece_bitboard != 0{
+            let passant_square: u8 = enpassant_piece_bitboard.trailing_zeros() as u8;
 
-                temp_piece_bitboard ^= 1<<square;
+            // the pawn is pinned
+            if chess_board.pin_mask & 1<<passant_square != 0{
+                
+                // piece is vertical to king and cant passant
+                if get_direction(king_square, passant_square as u8){
+                    continue;
+                }
+
+                // the target square is not allowed by pin mask
+                if chess_board.pin_mask & (1<<enpassant_to_square) == 0{
+                    continue;
+                }
             }
+
+            // king is in check
+            if chess_board.check_mask != 0{
+                if chess_board.board_color{
+                    // cannot capture the pawn that is checking the king
+                    if chess_board.check_mask & 1 << (enpassant_to_square + 8) == 0{
+                        continue;
+                    }
+                }
+                else{
+                    if chess_board.check_mask & 1 << (enpassant_to_square - 8) == 0{
+                        continue;
+                    }
+                } 
+            }
+
+            move_vec.push(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
+
+            enpassant_piece_bitboard ^= 1<<passant_square;
         }
     }
 }

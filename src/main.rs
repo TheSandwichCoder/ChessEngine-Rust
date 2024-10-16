@@ -13,8 +13,9 @@ mod magic_numbers;
 fn main() {
     // println!("{}", temp_thing[0]);
     // let mut chess_board_1 :ChessBoard = fen_to_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    
-    let mut chess_board_1: ChessBoard = fen_to_board("4K3/3QRB2/8/4r2r/b3q3/8/8k7 w KQkq - 0 1");
+
+
+    let mut chess_board_1: ChessBoard = fen_to_board("/k7/8/8/2pP4/1K1pPp1/8/8/8 w - c7 0 1");
     print_board_info(&chess_board_1);
 
     let mut move_vec: Vec<u16> = Vec::new();
@@ -36,11 +37,11 @@ fn main() {
     for mv in move_vec{
         print_move(&mv);
 
-        let mut temp_board: ChessBoard = chess_board_1.clone();
+        // let mut temp_board: ChessBoard = chess_board_1.clone();
         // print_board_info(&temp_board);
 
-        make_move(&mut temp_board, mv);
+        // make_move(&mut temp_board, mv);
 
-        print_board(&temp_board);
+        // print_board(&temp_board);
     }
 }

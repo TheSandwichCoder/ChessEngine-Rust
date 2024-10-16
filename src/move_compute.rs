@@ -44,6 +44,9 @@ const RANDOM_BITBOARD_IDENTIFIER: u64 = 1298301209;
 
 const HORIZONTAL_SLICE_BITBOARD : u64 = 0xFF00000000000000;
 const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
+
+const PROMOTION_BITBOARD_MASK: u64 = HORIZONTAL_SLICE_BITBOARD >> 56 | HORIZONTAL_SLICE_BITBOARD;
+
 const EDGE_MASK: u64 = 0xFF818181818181FF;
 
 pub const MOVE_DECODER_MASK:u16 = 0x3F;
@@ -627,7 +630,11 @@ fn get_move_code(from_square: u8, to_square: u8) -> u16{
     return (from_square as u16) | ((to_square as u16) << 6);
 }
 
-fn get_move_code_special(from_square: u8, to_square: u8, special:u8) -> u16{
+pub fn get_move_code_special(from_square: u8, to_square: u8, special:u8) -> u16{
+    return (from_square as u16) | ((to_square as u16) << 6) | ((special as u16) << 12);
+}
+
+pub const fn GET_MOVE_CODE_SPECIAL(from_square: u8, to_square: u8, special:u8) -> u16{
     return (from_square as u16) | ((to_square as u16) << 6) | ((special as u16) << 12);
 }
 
@@ -797,6 +804,8 @@ pub fn add_queen_moves(
     add_moves(move_vector, square, queen_move_bitboard);
 }
 
+// Non-Sliding Pieces
+
 pub fn add_knight_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
@@ -850,6 +859,20 @@ fn add_pawn_promotion_moves(from_square: u8, to_square: u8, move_vector: &mut Ve
     move_vector.push(get_move_code_special(from_square, to_square, 4));
 }
 
+fn add_moves_pawn_promotion(
+    move_vector: &mut Vec<u16>,
+    from_square: u8,
+    mut move_bitboard: u64,
+){
+  while move_bitboard != 0{
+    let to_square : u8 = move_bitboard.trailing_zeros().try_into().unwrap();
+
+    add_pawn_promotion_moves(from_square, to_square, move_vector);
+
+    move_bitboard ^= 1<<to_square;
+  }
+}
+
 pub fn add_pawn_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
@@ -857,47 +880,34 @@ pub fn add_pawn_moves(
 ){
     let blockers = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
 
+    let mut move_bitboard: u64 = 0;
+
     // white
     if chess_board.board_color{
+
         // pawn double move row
         if square >= 48 && square <= 55{
             // nothing blocking it from moving double
             if 1 << (square - 16) & blockers == 0{
-                move_vector.push(get_move_code(square, square - 16));
+                move_bitboard |= 1 << (square - 16);
             }
         }
 
         // nothing blocking it from moving forward
         if 1 << (square - 8) & blockers == 0{
-            // promotion square
-            if square - 8 <= 7{
-                add_pawn_promotion_moves(square, square-8, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square - 8));
-            }
+            // we temp ignore promotions since we are limited by the bitboard
+            move_bitboard |= 1 << (square - 8);
+            
         }
 
         // can capture piece on the right
-        if (square % 8 < 7) && 1 << (square - 7) & blockers != 0{
-            // promotion square
-            if square - 7 <= 7{
-                add_pawn_promotion_moves(square, square-7, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square - 7));
-            }
+        if (square % 8 < 7) && 1 << (square - 7) & chess_board.black_piece_bitboard != 0{
+            move_bitboard |= 1 << (square - 7);
         }
 
         // can capture piece on the left
-        if (square % 8 > 1) && 1 << (square - 9) & blockers != 0{
-            // promotion square
-            if square - 9 <= 7{
-                add_pawn_promotion_moves(square, square-9, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square - 9));
-            }
+        if (square % 8 > 1) && 1 << (square - 9) & chess_board.black_piece_bitboard != 0{
+            move_bitboard |= 1 << (square - 9);
         }
     }
 
@@ -907,41 +917,41 @@ pub fn add_pawn_moves(
         if square >= 8 && square <= 15{
             // nothing blocking it from moving double
             if 1 << (square + 16) & blockers == 0{
-                move_vector.push(get_move_code(square, square + 16));
+                move_bitboard |= 1 << (square+ 16);
             }
         }
 
         // nothing blocking it from moving forward
         if 1 << (square + 8) & blockers == 0{
-            // promotion square
-            if square + 8 >= 56{
-                add_pawn_promotion_moves(square, square+8, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square + 8));
-            }
+            move_bitboard |= 1 << (square + 8);
         }
 
         // can capture piece on the left
-        if (square % 8 > 1) && 1 << (square + 7) & blockers != 0{
-            // promotion square
-            if square + 7 >= 56{
-                add_pawn_promotion_moves(square, square+7, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square + 7));
-            }
+        if (square % 8 > 1) && 1 << (square + 7) & chess_board.white_piece_bitboard != 0{
+            move_bitboard |= 1 << (square + 7);
         }
 
         // can capture piece on the right
-        if (square % 8 < 7) && 1 << (square + 9) & blockers != 0{
-            // promotion square
-            if square + 9 >= 56{
-                add_pawn_promotion_moves(square, square + 9, move_vector);
-            }
-            else{
-                move_vector.push(get_move_code(square, square + 9));
-            }
+        if (square % 8 < 7) && 1 << (square + 9) & chess_board.white_piece_bitboard != 0{
+            move_bitboard |= 1 << (square + 9);
         }
+    }
+
+    // pin masking
+    if 1 << square & chess_board.pin_mask != 0{
+        move_bitboard &= chess_board.pin_mask;
+    }
+    
+    // check masking
+    if chess_board.check_mask != 0{
+        move_bitboard &= chess_board.check_mask;
+    }
+
+    // if one of the moves is a promotion, we can assumne all are... somehow
+    if move_bitboard & PROMOTION_BITBOARD_MASK != 0{
+        add_moves_pawn_promotion(move_vector, square, move_bitboard);
+    }
+    else{
+        add_moves(move_vector, square, move_bitboard);
     }
 }
