@@ -4,44 +4,21 @@ use board::*;
 use move_compute::*;
 use functions::*;
 use magic_numbers::*;
+use engine::*;
 
 mod board;
 mod move_compute;
 mod functions;
 mod magic_numbers;
+mod engine;
 
 fn main() {
     // println!("{}", temp_thing[0]);
-    // let mut chess_board_1 :ChessBoard = fen_to_board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut chess_board_1 :ChessBoard = fen_to_board("7q/b1p5/1p1Npkb1/pPP2ppP/P1P5/3B2P1/5P1R/K3R3 w");
+    // let depth: u16 = 3;
+    // // println!("Depth: {}, Nodes: {}", depth, perft(&chess_board_1, depth));
+    // print_board(&chess_board_1);
+    // sub_perft(&chess_board_1, depth);
 
-
-    let mut chess_board_1: ChessBoard = fen_to_board("/k7/8/8/2pP4/1K1pPp1/8/8/8 w - c7 0 1");
-    print_board_info(&chess_board_1);
-
-    let mut move_vec: Vec<u16> = Vec::new();
-
-    // add_pawn_moves(
-    //     &mut move_vec,
-    //     53,
-    //     chess_board_1.white_piece_bitboard,
-    //     chess_board_1.black_piece_bitboard,
-    //     0,
-    //     0,
-    //     1,
-    // );
-
-    get_moves(&chess_board_1, &mut move_vec);
-
-    // make_move(&mut chess_board_1, move_vec[0]);
-
-    for mv in move_vec{
-        print_move(&mv);
-
-        // let mut temp_board: ChessBoard = chess_board_1.clone();
-        // print_board_info(&temp_board);
-
-        // make_move(&mut temp_board, mv);
-
-        // print_board(&temp_board);
-    }
+    debug(&mut chess_board_1);
 }

@@ -47,6 +47,9 @@ const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
 
 const PROMOTION_BITBOARD_MASK: u64 = HORIZONTAL_SLICE_BITBOARD >> 56 | HORIZONTAL_SLICE_BITBOARD;
 
+pub const WHITE_PAWN_DOUBLE_MOVE_MASK: u64 = HORIZONTAL_SLICE_BITBOARD >> 8;
+pub const BLACK_PAWN_DOUBLE_MOVE_MASK: u64 = HORIZONTAL_SLICE_BITBOARD >> 48;
+
 const EDGE_MASK: u64 = 0xFF818181818181FF;
 
 pub const MOVE_DECODER_MASK:u16 = 0x3F;
@@ -69,7 +72,7 @@ const fn GET_PAWN_ATTACK_MASK(color: bool) -> [u64; 64]{
         let x_pos : u8 = counter % 8;
         let mut attack_bitboard: u64 = 0;
         // skip the end rows    
-        if y_pos == 0 || y_pos == 7{
+        if (y_pos == 0 && color) || (y_pos == 7 && !color){
             counter += 1;
             continue;
         }
@@ -626,7 +629,7 @@ pub fn get_Magic_Number(blocker_combinations: [u64; 20000]) -> (u64,u32){
 
 // piece movement functions
 
-fn get_move_code(from_square: u8, to_square: u8) -> u16{
+pub fn get_move_code(from_square: u8, to_square: u8) -> u16{
     return (from_square as u16) | ((to_square as u16) << 6);
 }
 
@@ -853,10 +856,10 @@ pub fn add_king_moves(
 }
 
 fn add_pawn_promotion_moves(from_square: u8, to_square: u8, move_vector: &mut Vec<u16>){
-    move_vector.push(get_move_code_special(from_square, to_square, 1));
-    move_vector.push(get_move_code_special(from_square, to_square, 2));
-    move_vector.push(get_move_code_special(from_square, to_square, 3));
-    move_vector.push(get_move_code_special(from_square, to_square, 4));
+    move_vector.push(get_move_code_special(from_square, to_square, 5));
+    move_vector.push(get_move_code_special(from_square, to_square, 6));
+    move_vector.push(get_move_code_special(from_square, to_square, 7));
+    move_vector.push(get_move_code_special(from_square, to_square, 8));
 }
 
 fn add_moves_pawn_promotion(
@@ -873,28 +876,69 @@ fn add_moves_pawn_promotion(
   }
 }
 
+// this assumes that it is possible for double move
+pub fn add_pawn_double_move(
+    chess_board: &ChessBoard,
+    move_vector: &mut Vec<u16>, 
+    square: u8,
+){
+    let mut move_bitboard = 0;
+    if chess_board.board_color{
+        // no blockers in the way
+        if ((1 << (square-16)) | (1<<(square-8))) & chess_board.all_piece_bitboard == 0{
+            move_bitboard |= 1 << (square-16);
+        }
+    }
+    else{
+        // no blockers in the way
+        if ((1 << (square+16)) | (1<<(square+8))) & chess_board.all_piece_bitboard == 0{
+            move_bitboard |= 1 << (square+16);
+        }
+    }
+
+    if move_bitboard == 0{
+        return;
+    }
+
+    if 1 << square & chess_board.pin_mask != 0{
+        move_bitboard &= chess_board.pin_mask;
+    }
+    
+    // check masking
+    if chess_board.check_mask != 0{
+        move_bitboard &= chess_board.check_mask;
+    }
+
+    if move_bitboard != 0{
+        if chess_board.board_color{
+            move_vector.push(get_move_code_special(square, square-16, 2));
+        }
+        else{
+            move_vector.push(get_move_code_special(square, square+16, 2));
+        }
+    }
+}
+
 pub fn add_pawn_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
     square: u8, 
 ){
-    let blockers = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
-
     let mut move_bitboard: u64 = 0;
 
     // white
     if chess_board.board_color{
 
-        // pawn double move row
-        if square >= 48 && square <= 55{
-            // nothing blocking it from moving double
-            if 1 << (square - 16) & blockers == 0{
-                move_bitboard |= 1 << (square - 16);
-            }
-        }
+        // // pawn double move row
+        // if square >= 48 && square <= 55{
+        //     // nothing blocking it from moving double
+        //     if 1 << (square - 16) & chess_board.all_piece_bitboard == 0{
+        //         move_bitboard |= 1 << (square - 16);
+        //     }
+        // }
 
         // nothing blocking it from moving forward
-        if 1 << (square - 8) & blockers == 0{
+        if 1 << (square - 8) & chess_board.all_piece_bitboard == 0{
             // we temp ignore promotions since we are limited by the bitboard
             move_bitboard |= 1 << (square - 8);
             
@@ -906,28 +950,28 @@ pub fn add_pawn_moves(
         }
 
         // can capture piece on the left
-        if (square % 8 > 1) && 1 << (square - 9) & chess_board.black_piece_bitboard != 0{
+        if (square % 8 > 0) && 1 << (square - 9) & chess_board.black_piece_bitboard != 0{
             move_bitboard |= 1 << (square - 9);
         }
     }
 
     // black
     else{
-        // pawn double move row
-        if square >= 8 && square <= 15{
-            // nothing blocking it from moving double
-            if 1 << (square + 16) & blockers == 0{
-                move_bitboard |= 1 << (square+ 16);
-            }
-        }
+        // // pawn double move row
+        // if square >= 8 && square <= 15{
+        //     // nothing blocking it from moving double
+        //     if 1 << (square + 16) & chess_board.all_piece_bitboard == 0{
+        //         move_bitboard |= 1 << (square+ 16);
+        //     }
+        // }
 
         // nothing blocking it from moving forward
-        if 1 << (square + 8) & blockers == 0{
+        if 1 << (square + 8) & chess_board.all_piece_bitboard == 0{
             move_bitboard |= 1 << (square + 8);
         }
 
         // can capture piece on the left
-        if (square % 8 > 1) && 1 << (square + 7) & chess_board.white_piece_bitboard != 0{
+        if (square % 8 > 0) && 1 << (square + 7) & chess_board.white_piece_bitboard != 0{
             move_bitboard |= 1 << (square + 7);
         }
 
