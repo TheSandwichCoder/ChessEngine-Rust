@@ -5,12 +5,14 @@ use move_compute::*;
 use functions::*;
 use magic_numbers::*;
 use engine::*;
+use evaluation::*;
 
 mod board;
 mod move_compute;
 mod functions;
 mod magic_numbers;
 mod engine;
+mod evaluation;
 
 fn main() {
     // println!("{}", temp_thing[0]);

@@ -3,6 +3,13 @@ use std::io::{self, Write};
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
+use crate::evaluation::*;
+
+#[derive(Copy, Clone)]
+struct move_score_pair{
+    mv: u16,
+    score: i16,
+}
 
 // gets the number of nodes given an iteration depth
 pub fn perft(board: &ChessBoard, depth: u16) -> u32{
@@ -161,5 +168,64 @@ pub fn debug(chess_board: &mut ChessBoard){
 
             sub_perft(&chess_board, depth);
         }
+
+        else if input_string == "best move"{
+            input_string.clear();
+            print!("depth >>");
+            io::stdout().flush().unwrap();
+            
+            io::stdin()
+            .read_line(&mut input_string)
+            .expect("Failed to read line");
+
+            let depth: u8 = input_string.trim().parse().expect("cannot parse string to int");
+
+            let best_move: move_score_pair = get_best_move_depth_search(chess_board, depth);
+
+            println!("evaluation: {} score: {}", get_move_string(best_move.mv), best_move.score);
+        }
     }
+}
+
+pub fn get_best_move_depth_search(chess_board: &ChessBoard, depth: u8) -> move_score_pair{
+    let mut move_vec: Vec<u16> = Vec::new();
+
+    get_moves(chess_board, &mut move_vec);
+
+    let mut best_mvel_pair: move_score_pair = move_score_pair{
+        mv: 0,
+        score: 0,
+    };
+
+    if chess_board.board_color{
+        best_mvel_pair.score = -10000;
+    }
+    else{
+        best_mvel_pair.score = 10000;
+    }
+
+    for mv in move_vec{
+        let mut sub_board: ChessBoard = chess_board.clone();
+
+        make_move(&mut sub_board, mv);
+
+        let mvel_pair: move_score_pair;
+
+        if depth == 1{
+            mvel_pair = move_score_pair{
+                mv: mv,
+                score: get_board_score(&sub_board),
+            }
+        }
+        else{
+            mvel_pair = get_best_move_depth_search(&sub_board, depth - 1);
+        }
+
+        if (mvel_pair.score > best_mvel_pair.score) == chess_board.board_color{
+            best_mvel_pair.score = mvel_pair.score;
+            best_mvel_pair.mv = mv;
+        }
+    }
+
+    return best_mvel_pair;
 }
