@@ -6,8 +6,8 @@ use crate::board::*;
 use crate::evaluation::*;
 
 #[derive(Copy, Clone)]
-struct move_score_pair{
-    mv: u16,
+pub struct move_score_pair{
+    pub mv: u16,
     score: i16,
 }
 

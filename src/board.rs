@@ -598,7 +598,7 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_bitboards[3] ^= WHITE_RIGHT_ROOK_DEFAULT;
                 chess_board.piece_bitboards[3] ^= chess_board.piece_bitboards[5] >> 1;
 
-                chess_board.white_piece_bitboard ^= WHITE_LEFT_ROOK_DEFAULT;
+                chess_board.white_piece_bitboard ^= WHITE_RIGHT_ROOK_DEFAULT;
                 chess_board.white_piece_bitboard ^= chess_board.piece_bitboards[5] >> 1;
 
                 chess_board.piece_array[63] = 0;
@@ -624,7 +624,7 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_bitboards[9] ^= BLACK_RIGHT_ROOK_DEFAULT;
                 chess_board.piece_bitboards[9] ^= chess_board.piece_bitboards[11] >> 1;
 
-                chess_board.black_piece_bitboard ^= BLACK_LEFT_ROOK_DEFAULT;
+                chess_board.black_piece_bitboard ^= BLACK_RIGHT_ROOK_DEFAULT;
                 chess_board.black_piece_bitboard ^= chess_board.piece_bitboards[11] << 1;
 
                 chess_board.piece_array[7] = 0;

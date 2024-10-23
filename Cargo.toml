@@ -9,4 +9,5 @@ rustflags = [
 ]
 
 [dependencies]
+bevy = "0.14.2"
 rand = "0.8.5"
