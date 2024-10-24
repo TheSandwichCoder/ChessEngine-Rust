@@ -4,24 +4,25 @@ use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
 use crate::evaluation::*;
+use crate::app_settings::SEARCH_DEPTH;
 
 #[derive(Copy, Clone)]
 pub struct move_score_pair{
     pub mv: u16,
-    score: i16,
+    pub score: i16,
 }
 
 // gets the number of nodes given an iteration depth
 pub fn perft(board: &ChessBoard, depth: u16) -> u32{
-    
+    // base case
+    if depth == 0{
+        get_board_score(&board);
+        return 1;
+    }
+
     let mut move_vec: Vec<u16> = Vec::new();
 
     get_moves(board, &mut move_vec);
-
-    // base case
-    if depth == 1{
-        return move_vec.len() as u32;
-    }
 
     let mut node_num: u32 = 0;
     
@@ -187,6 +188,8 @@ pub fn debug(chess_board: &mut ChessBoard){
     }
 }
 
+static mut node_counter: u32 = 0;
+
 pub fn get_best_move_depth_search(chess_board: &ChessBoard, depth: u8) -> move_score_pair{
     let mut move_vec: Vec<u16> = Vec::new();
 
@@ -215,10 +218,20 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, depth: u8) -> move_s
             mvel_pair = move_score_pair{
                 mv: mv,
                 score: get_board_score(&sub_board),
-            }
+            };
+            unsafe{
+                node_counter += 1;
+            };
         }
         else{
             mvel_pair = get_best_move_depth_search(&sub_board, depth - 1);
+
+            if depth == SEARCH_DEPTH{
+                unsafe{
+                    println!("move searched: {} {} {}", get_move_string(mv), mvel_pair.score, node_counter);
+                    node_counter = 0;
+                };
+            }
         }
 
         if (mvel_pair.score > best_mvel_pair.score) == chess_board.board_color{

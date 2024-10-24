@@ -121,8 +121,8 @@ pub fn print_board_info(chess_board: &ChessBoard){
         println!("To Move: Black \n");
     }
 
-    println!("White Castle King: {}", chess_board.board_info & 8 > 0);
-    println!("White Castle Queen: {}", chess_board.board_info & 4 > 0);
+    println!("White Castle King: {}", chess_board.board_info & 4 > 0);
+    println!("White Castle Queen: {}", chess_board.board_info & 8 > 0);
     println!("Black Castle King: {}", chess_board.board_info & 2 > 0);
     println!("Black Castle Queen: {}", chess_board.board_info & 1 > 0);
     println!("En Passant: {}", chess_board.board_info >> 4);
@@ -278,10 +278,10 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
         // fen - castling
         else if fen_string_part == 2{
             if p == 'K'{
-                castle_priv |= 8;
+                castle_priv |= 4;
             }
             else if p == 'Q'{
-                castle_priv |= 4;
+                castle_priv |= 8;
             }
             else if p == 'k'{
                 castle_priv |= 2;
@@ -625,7 +625,7 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_bitboards[9] ^= chess_board.piece_bitboards[11] >> 1;
 
                 chess_board.black_piece_bitboard ^= BLACK_RIGHT_ROOK_DEFAULT;
-                chess_board.black_piece_bitboard ^= chess_board.piece_bitboards[11] << 1;
+                chess_board.black_piece_bitboard ^= chess_board.piece_bitboards[11] >> 1;
 
                 chess_board.piece_array[7] = 0;
                 chess_board.piece_array[5] = 10;
@@ -1077,6 +1077,7 @@ pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
 
         while enpassant_piece_bitboard != 0{
             let passant_square: u8 = enpassant_piece_bitboard.trailing_zeros() as u8;
+            enpassant_piece_bitboard ^= 1<<passant_square;
 
             // the pawn is pinned
             if chess_board.pin_mask & 1<<passant_square != 0{
@@ -1109,7 +1110,61 @@ pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
 
             move_vec.push(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
 
-            enpassant_piece_bitboard ^= 1<<passant_square;
+            
         }
     }
+}
+
+// 0 - still going
+// 1 - white checkmate
+// 2 - black checkmate
+// 3 - draw
+pub fn get_gamestate(chess_board: &ChessBoard) -> u8{
+    let mut move_vec: Vec<u16> = Vec::new();
+
+    get_moves(&chess_board, &mut move_vec);
+
+    // no moves
+    if move_vec.len() == 0{
+        if chess_board.check_mask != 0{
+            if chess_board.board_color{
+                return 2;
+            }
+            else{
+                return 1;
+            }
+        }
+
+        else{
+            // stalemate
+            return 3;
+        }
+    }
+
+      
+
+    let total_bishop_num = chess_board.piece_bitboards[1].count_ones() + chess_board.piece_bitboards[7].count_ones();
+    let total_knight_num = chess_board.piece_bitboards[2].count_ones() + chess_board.piece_bitboards[8].count_ones();
+
+    // there is a pawn or queen or rooks on the board
+    if chess_board.piece_bitboards[0] | 
+    chess_board.piece_bitboards[6] | 
+    chess_board.piece_bitboards[4] | 
+    chess_board.piece_bitboards[10] |
+    chess_board.piece_bitboards[3] | 
+    chess_board.piece_bitboards[9] != 0{
+        return 0;
+    }
+
+    // there are less than 2 bishops
+    if total_bishop_num < 2{
+        return 3;
+    }
+
+    // there are less than 2 knights
+    if total_knight_num < 2{
+        return 3;
+    }
+
+    return 0;
 }

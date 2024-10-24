@@ -984,6 +984,17 @@ pub fn add_pawn_moves(
     // pin masking
     if 1 << square & chess_board.pin_mask != 0{
         move_bitboard &= chess_board.pin_mask;
+
+        let mut king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
+        if !chess_board.board_color{
+            king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
+        }
+
+        // this additional mask is to prevent clashing
+        // bishop direction
+        if !get_direction(square, king_square){
+            move_bitboard &= BISHOP_MOVE_MASK[king_square as usize];
+        }
     }
     
     // check masking

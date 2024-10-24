@@ -13,6 +13,14 @@ pub struct BoardPlugin;
 
 
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
+pub enum GameState {
+    #[default]
+    Playing,
+    BlackMate,
+    WhiteMate,
+    Draw,
+}
 
 #[derive(Component, Clone, Copy)]
 pub struct BoardParent{
@@ -56,7 +64,8 @@ impl Plugin for BoardPlugin{
             .add_systems(Startup, load_chess_piece_images.before(spawn_board_parent).before(spawn_board_pieces).before(spawn_piece_follow))
             .add_systems(Startup,(spawn_board_parent.before(spawn_board_pieces), spawn_board_pieces, spawn_piece_follow))
             .add_systems(Update, (update_pieces_pos, update_piece_follow_pos, player_move_piece, update_board_position))
-            .add_systems(Update, engine_move_piece);
+            .add_systems(Update, engine_move_piece)
+            .add_systems(OnEnter(GameState::Playing), reset_board);
     }
 }
 
@@ -68,11 +77,9 @@ fn engine_move_handling() -> (Receiver<u16>, Sender<ChessBoard>) {
     thread::spawn(move || {
         loop {
             if let Ok(data) = rx2.try_recv() {
-                print_board(&data);
+                let mv : move_score_pair = get_best_move_depth_search(&data, SEARCH_DEPTH);
 
-                let mv : move_score_pair = get_best_move_depth_search(&data, 4);
-
-                print_move(&mv.mv);
+                println!("{} {}", get_move_string(mv.mv), mv.score);
 
                 tx.send(mv.mv).unwrap();
             }
@@ -91,7 +98,6 @@ fn engine_move_piece(
     let mut board_parent = board_parent.single_mut();
 
     if let Ok(mv) = mv_rx.0.lock().unwrap().try_recv(){
-        println!("here");
         make_move(&mut board_parent.board, mv);
 
         board_parent.just_moved = true;
@@ -220,7 +226,8 @@ fn update_board_position(
     pieces: Query<Entity, With<Piece>>,
     mut board_parent: Query<(Entity, &mut BoardParent)>,
     chess_piece_assets: Res<ChessPieceAssets>,
-
+    current_state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>
 ){
     let (board_parent, mut parent_struct) = board_parent.single_mut();
 
@@ -261,6 +268,18 @@ fn update_board_position(
             }
         }
 
+        let board_game_state = get_gamestate(&parent_struct.board);
+        if board_game_state == 1{
+            next_state.set(GameState::WhiteMate);
+        }
+        else if board_game_state == 2{
+            next_state.set(GameState::BlackMate);
+        }
+        else if board_game_state == 3{
+            next_state.set(GameState::Draw);
+        }
+        
+
         parent_struct.just_moved = false;
     }
 
@@ -284,6 +303,19 @@ fn update_pieces_pos(
             transform.translation.z = 1.0;
         }
     } 
+}
+
+fn reset_board(
+    mut board: Query<&mut BoardParent>
+){
+    // I hate threading
+    if board.iter().count() > 0{
+        let mut board = board.single_mut();
+
+        board.board = fen_to_board(DEFAULT_FEN);
+        board.piece_selected_pos = IVec3::new(-1,-1,0);
+        board.just_moved = true;
+    }
 }
 
 fn update_piece_follow_pos(
@@ -332,15 +364,13 @@ fn player_move_piece(
     if mouseInput.just_pressed(MouseButton::Left) {
         let board_selected_pos = global_pos_to_board_pos(mouse_pos_to_global_pos(mouse_position.unwrap()));
 
-        println!("{}", board_selected_pos);
-
         // selecting a piece
         if board_parent.piece_selected_pos.x == -1{
             let piece_square: usize = board_pos_to_square_num(board_selected_pos) as usize;
             let selected_piece_type = board_parent.board.piece_array[piece_square] as usize;
 
-            // selected an empty square
-            if selected_piece_type == 0{
+            // selected an empty square or a black piece or its blacks turn
+            if selected_piece_type == 0 || selected_piece_type > 6 || !board_parent.board.board_color{
                 return;
             }
 
@@ -362,15 +392,13 @@ fn player_move_piece(
             let mut move_code : u16 = get_move_code(board_pos_to_square_num(board_parent.piece_selected_pos), board_pos_to_square_num(board_selected_pos));
 
             print_move(&move_code);
+            println!("{}", board_to_fen(&board_parent.board));
 
             for mv in move_vec{
                 if mv & 0xFFF == move_code{
                     // promotion - forced to be queen promotion cause Im lazy
                     if mv >> 12 >= 5 && mv >> 12 <= 8{
                         move_code |= 0x8000;
-
-                        print_move(&move_code);
-
                     }
                     else{
                         move_code = mv;
@@ -388,10 +416,15 @@ fn player_move_piece(
                 return;
             }
 
-            println!("{}", board_to_fen(&board_parent.board));
-
             make_move(&mut board_parent.board, move_code);
             board_parent.just_moved = true;
+
+            let board_game_state = get_gamestate(&board_parent.board);
+
+            // the game ended
+            if board_game_state != 0{
+                return;
+            }
 
             board_tx.0.lock().unwrap().send(board_parent.board.clone()).unwrap();
                     

@@ -11,7 +11,7 @@ use magic_numbers::*;
 use engine::*;
 use evaluation::*;
 use app_settings::*;
-use app_pieces::BoardPlugin;
+use app_pieces::*;
 
 mod board;
 mod move_compute;
@@ -22,6 +22,9 @@ mod evaluation;
 
 mod app_settings;
 mod app_pieces;
+
+#[derive(Component)]
+struct replayText;
 
 fn main() {
     App::new()
@@ -43,14 +46,22 @@ fn main() {
         })
         .build(),
     ))
+    .init_state::<GameState>()
     .add_plugins(BoardPlugin)
     .add_systems(Startup, setup)
+    .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
+    .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
+
+    .add_systems(Update, play_again_inputs)
     .run();
 
-    // let mut chess_board_1 = fen_to_board("rnb2bnr/pppkppp1/4q3/3N3p/4B3/3P1N2/PPP2P1P/R1BQK2R/ w KQ - 0 1");
+    // let mut chess_board_1 = fen_to_board("r1b1Rbk1/p7/2nr3q/2pp3B/1p4P1/2BP3P/PPP2P2/4R1K1/ b - - 0 1");
 
     // debug(&mut chess_board_1);
 }
+// move
+// d6e6
+// e8e6
 
 
 fn setup(
@@ -102,4 +113,75 @@ fn setup(
     
 }
 
-// fn update(mut )
+fn show_game_over_screen_system(
+    mut commands: Commands,
+    game_state: Res<State<GameState>>
+) {
+    let mut game_over_string = String::new();
+
+    match game_state.get() {
+        GameState::BlackMate => {
+            game_over_string = "You just got pawned".to_string();
+        },
+        GameState::WhiteMate => {
+            game_over_string = "Wow you are so cool".to_string();
+        },
+        GameState::Draw => {
+            game_over_string = "Imagine not winning".to_string();
+        },
+        _ => {
+            game_over_string = "uh oh something bad happened".to_string();
+        }
+    }
+
+    commands.spawn((
+        // Create a TextBundle that has a Text with a single section.
+        TextBundle::from_section(
+            // Accepts a `String` or any type that converts into a `String`, such as `&str`
+            game_over_string.to_owned(),
+            TextStyle {
+                font_size: 40.0,
+                color: Color::rgb(0.0,0.0,0.0),
+                ..default()
+            },
+        ) // Set the justification of the Text
+        .with_text_justify(JustifyText::Center)
+        // Set the style of the TextBundle itself.
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(HALF_SCREENSIZE.x),
+            left: Val::Px(HALF_SCREENSIZE.x/2.0),
+            ..default()
+        }),
+        replayText
+    ));
+}
+
+fn remove_game_over_screen_system(
+    mut commands: Commands,
+    game_state: Res<State<GameState>>,
+    replay_text: Query<Entity, With<replayText>>
+){
+    if replay_text.iter().count() > 0{
+        let replay_text = replay_text.single();
+        commands.entity(replay_text).despawn();
+    }    
+}
+
+fn play_again_inputs(
+    mouseInput: Res<ButtonInput<MouseButton>>,
+    keyboardInput: Res<ButtonInput<KeyCode>>,
+    current_state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>
+){
+
+    match current_state.get() {
+        GameState::Playing =>{},
+        _ =>{
+            if keyboardInput.just_pressed(KeyCode::Enter) || mouseInput.just_pressed(MouseButton::Left){
+                next_state.set(GameState:: Playing);
+            }
+        },
+    }
+
+}
