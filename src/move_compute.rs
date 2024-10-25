@@ -721,7 +721,13 @@ pub fn add_rook_moves(
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
-        rook_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize];
+        if get_direction(king_square, square){
+            rook_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize];
+        }
+        else{
+            // diagonal pin so no legal moves
+            return;
+        }
     }
 
     // "check" check
@@ -755,7 +761,12 @@ pub fn add_bishop_moves(
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
-        bishop_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize];
+        if !get_direction(king_square, square){
+            bishop_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize];
+        }
+        else{
+            return;
+        }
     }
 
     // "check" check
@@ -791,10 +802,10 @@ pub fn add_queen_moves(
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
         if get_direction(king_square, square){
-            queen_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize];
+            queen_move_bitboard &= chess_board.pin_mask & ROOK_MOVE_MASK[king_square as usize] & ROOK_MOVE_MASK[square as usize];
         }
         else{
-            queen_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize];
+            queen_move_bitboard &= chess_board.pin_mask & BISHOP_MOVE_MASK[king_square as usize] & BISHOP_MOVE_MASK[square as usize];
         }
 
     }
@@ -883,17 +894,20 @@ pub fn add_pawn_double_move(
     square: u8,
 ){
     let mut move_bitboard = 0;
+    let king_square: u8;
     if chess_board.board_color{
         // no blockers in the way
         if ((1 << (square-16)) | (1<<(square-8))) & chess_board.all_piece_bitboard == 0{
             move_bitboard |= 1 << (square-16);
         }
+        king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
     }
     else{
         // no blockers in the way
         if ((1 << (square+16)) | (1<<(square+8))) & chess_board.all_piece_bitboard == 0{
             move_bitboard |= 1 << (square+16);
         }
+        king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
     }
 
     if move_bitboard == 0{
@@ -902,6 +916,14 @@ pub fn add_pawn_double_move(
 
     if 1 << square & chess_board.pin_mask != 0{
         move_bitboard &= chess_board.pin_mask;
+        
+        // prevent pin clashing
+        if get_direction(square, king_square){
+            move_bitboard &= ROOK_MOVE_MASK[king_square as usize];
+        }
+        else{
+            move_bitboard &= BISHOP_MOVE_MASK[king_square as usize];
+        }
     }
     
     // check masking
@@ -991,8 +1013,10 @@ pub fn add_pawn_moves(
         }
 
         // this additional mask is to prevent clashing
-        // bishop direction
-        if !get_direction(square, king_square){
+        if get_direction(square, king_square){
+            move_bitboard &= ROOK_MOVE_MASK[king_square as usize];
+        }
+        else{
             move_bitboard &= BISHOP_MOVE_MASK[king_square as usize];
         }
     }

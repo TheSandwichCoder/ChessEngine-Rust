@@ -47,6 +47,19 @@ pub fn get_move_string(mv: u16) -> String{
     return format!("{}{}", num_to_coord(from_pos), num_to_coord(to_pos));
 }
 
+pub fn print_move_command_debug(mv: u16){
+    // special move
+    if mv >> 12 != 0{
+        println!("move special");
+        println!("{}", get_move_string(mv));
+        println!("{}", mv >> 12);
+    }
+    else{
+        println!("move");
+        println!("{}", get_move_string(mv));
+    }
+}
+
 pub fn num_to_coord(square: u16) -> String{
     if square > 63 {
         return String::from("Invalid");

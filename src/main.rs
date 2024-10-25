@@ -55,14 +55,19 @@ fn main() {
     .add_systems(Update, play_again_inputs)
     .run();
 
-    // let mut chess_board_1 = fen_to_board("r1b1Rbk1/p7/2nr3q/2pp3B/1p4P1/2BP3P/PPP2P2/4R1K1/ b - - 0 1");
+    // let mut chess_board = fen_to_board("1n6/6b1/7r/p1pk1p1p/3PP1p1/8/1PP2PPP/q1BQ1K1R/ b - - 0 1");
 
-    // debug(&mut chess_board_1);
+    // debug(&mut chess_board);
 }
-// move
-// d6e6
-// e8e6
 
+// move
+// f5e4
+// move
+// c1g5
+// move
+// h6f6
+// move
+// d1f3
 
 fn setup(
     mut commands: Commands, 

@@ -79,7 +79,8 @@ fn engine_move_handling() -> (Receiver<u16>, Sender<ChessBoard>) {
             if let Ok(data) = rx2.try_recv() {
                 let mv : move_score_pair = get_best_move_depth_search(&data, SEARCH_DEPTH);
 
-                println!("{} {}", get_move_string(mv.mv), mv.score);
+                // println!("{} {}", get_move_string(mv.mv), mv.score);
+                print_move_command_debug(mv.mv);
 
                 tx.send(mv.mv).unwrap();
             }
@@ -391,9 +392,6 @@ fn player_move_piece(
             
             let mut move_code : u16 = get_move_code(board_pos_to_square_num(board_parent.piece_selected_pos), board_pos_to_square_num(board_selected_pos));
 
-            print_move(&move_code);
-            println!("{}", board_to_fen(&board_parent.board));
-
             for mv in move_vec{
                 if mv & 0xFFF == move_code{
                     // promotion - forced to be queen promotion cause Im lazy
@@ -416,8 +414,12 @@ fn player_move_piece(
                 return;
             }
 
+            
             make_move(&mut board_parent.board, move_code);
             board_parent.just_moved = true;
+
+            print_move_command_debug(move_code);
+            println!("{}", board_to_fen(&board_parent.board));
 
             let board_game_state = get_gamestate(&board_parent.board);
 

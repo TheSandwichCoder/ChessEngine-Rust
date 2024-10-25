@@ -207,6 +207,16 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, depth: u8) -> move_s
         best_mvel_pair.score = 10000;
     }
 
+    // no legal moves
+    if move_vec.len() == 0{
+        // not in check
+        if chess_board.check_mask == 0{
+            best_mvel_pair.score = 0;
+        }
+        
+        return best_mvel_pair;
+    }
+
     for mv in move_vec{
         let mut sub_board: ChessBoard = chess_board.clone();
 
