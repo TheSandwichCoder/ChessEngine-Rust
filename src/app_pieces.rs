@@ -8,10 +8,21 @@ use crate::move_compute::get_move_code;
 use crate::functions::*;
 use crate::app_settings::*;
 use crate::engine::*;
+use crate::game_board::*;
+use crate::evaluation::*;
 
 pub struct BoardPlugin;
 
+// I completely forgot my threading system so I'm going to leave this here for future me
+// Has helped counter - 1
 
+// gameloop - player move piece
+// thread1 - engine move handling
+// thread2 - engine move making
+
+// player move piece -> sends new board copy to thread1
+// thread1 sees new board copy -> does move search and finds move
+// thread1 sends move to thread2 -> thread2 makes the move in global board
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
 pub enum GameState {
@@ -22,9 +33,9 @@ pub enum GameState {
     Draw,
 }
 
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone)]
 pub struct BoardParent{
-    pub board: ChessBoard,
+    pub game_board: GameChessBoard,
     pub piece_selected_pos: IVec3,
     pub just_moved: bool,
 }
@@ -49,7 +60,7 @@ struct ChessPieceAssets{
 struct ReceiveMoveTag(Mutex<Receiver<u16>>);
 
 #[derive(Resource)]
-struct SendBoardTag(Mutex<Sender<ChessBoard>>);
+struct SendBoardTag(Mutex<Sender<GameChessBoard>>);
 
 
 // store the best move
@@ -69,17 +80,18 @@ impl Plugin for BoardPlugin{
     }
 }
 
-fn engine_move_handling() -> (Receiver<u16>, Sender<ChessBoard>) {
+fn engine_move_handling() -> (Receiver<u16>, Sender<GameChessBoard>) {
     let (tx, rx): (Sender<u16>, Receiver<u16>) = channel();
 
-    let (tx2, rx2): (Sender<ChessBoard>, Receiver<ChessBoard>) = channel();
+    let (tx2, rx2): (Sender<GameChessBoard>, Receiver<GameChessBoard>) = channel();
 
     thread::spawn(move || {
         loop {
-            if let Ok(data) = rx2.try_recv() {
-                let mv : move_score_pair = get_best_move_depth_search(&data, SEARCH_DEPTH);
+            if let Ok(mut game_chess_board) = rx2.try_recv() {
+                // let mv : MoveScorePair = get_best_move_depth_search(&game_chess_board.chess_board, SEARCH_DEPTH);
 
-                // println!("{} {}", get_move_string(mv.mv), mv.score);
+                let mv: MoveScorePair = get_best_move(&mut game_chess_board, SEARCH_DEPTH);
+
                 print_move_command_debug(mv.mv);
 
                 tx.send(mv.mv).unwrap();
@@ -99,7 +111,9 @@ fn engine_move_piece(
     let mut board_parent = board_parent.single_mut();
 
     if let Ok(mv) = mv_rx.0.lock().unwrap().try_recv(){
-        make_move(&mut board_parent.board, mv);
+        // make_move(&mut board_parent.game_board.board, mv);
+
+        game_make_move(&mut board_parent.game_board, mv);
 
         board_parent.just_moved = true;
     }
@@ -130,7 +144,7 @@ fn spawn_board_parent(mut commands:Commands){
     commands.spawn((
         SpatialBundle::default(), 
         BoardParent{
-            board: fen_to_board(DEFAULT_FEN),
+            game_board: fen_to_GameChessBoard(DEFAULT_FEN),
             piece_selected_pos: IVec3::new(-1,-1,0),
             just_moved: false,
         }, 
@@ -193,7 +207,7 @@ fn spawn_board_pieces(
     let (parent, mut parentStruct) = parent.single_mut();
 
     for i in 0..12{
-        let mut temp_bitboard : u64 = parentStruct.board.piece_bitboards[i];
+        let mut temp_bitboard : u64 = parentStruct.game_board.board.piece_bitboards[i];
 
         while temp_bitboard != 0{
             let square: u8 = temp_bitboard.trailing_zeros() as u8;
@@ -242,7 +256,7 @@ fn update_board_position(
 
 
         for i in 0..12{
-            let mut temp_bitboard : u64 = parent_struct.board.piece_bitboards[i];
+            let mut temp_bitboard : u64 = parent_struct.game_board.board.piece_bitboards[i];
 
             while temp_bitboard != 0{
                 let square: u8 = temp_bitboard.trailing_zeros() as u8;
@@ -269,14 +283,14 @@ fn update_board_position(
             }
         }
 
-        let board_game_state = get_gamestate(&parent_struct.board);
-        if board_game_state == 1{
+        let game_board_state = get_gamestate(&parent_struct.game_board);
+        if game_board_state == 1{
             next_state.set(GameState::WhiteMate);
         }
-        else if board_game_state == 2{
+        else if game_board_state == 2{
             next_state.set(GameState::BlackMate);
         }
-        else if board_game_state == 3{
+        else if game_board_state == 3{
             next_state.set(GameState::Draw);
         }
         
@@ -313,7 +327,7 @@ fn reset_board(
     if board.iter().count() > 0{
         let mut board = board.single_mut();
 
-        board.board = fen_to_board(DEFAULT_FEN);
+        board.game_board = fen_to_GameChessBoard(DEFAULT_FEN);
         board.piece_selected_pos = IVec3::new(-1,-1,0);
         board.just_moved = true;
     }
@@ -356,6 +370,8 @@ fn player_move_piece(
     let (mut piece_follow_texture, mut piece_follow) = piece_follow.single_mut();
     let mut board_parent = board_parent.single_mut();
 
+    let game_board : &GameChessBoard = &board_parent.game_board;
+
     let mouse_position = q_windows.single().cursor_position();
 
     if !mouse_position.is_some(){
@@ -368,10 +384,10 @@ fn player_move_piece(
         // selecting a piece
         if board_parent.piece_selected_pos.x == -1{
             let piece_square: usize = board_pos_to_square_num(board_selected_pos) as usize;
-            let selected_piece_type = board_parent.board.piece_array[piece_square] as usize;
+            let selected_piece_type = game_board.board.piece_array[piece_square] as usize;
 
             // selected an empty square or a black piece or its blacks turn
-            if selected_piece_type == 0 || selected_piece_type > 6 || !board_parent.board.board_color{
+            if selected_piece_type == 0 || selected_piece_type > 6 || !game_board.board.board_color{
                 return;
             }
 
@@ -386,7 +402,7 @@ fn player_move_piece(
         else{
             let mut move_vec: Vec<u16> = Vec::new();
 
-            get_moves(&board_parent.board, &mut move_vec);
+            get_moves(&game_board.board, &mut move_vec);
 
             let mut is_legal : bool = false;
             
@@ -415,26 +431,24 @@ fn player_move_piece(
             }
 
             
-            make_move(&mut board_parent.board, move_code);
+            // make_move(&mut board_parent.board, move_code);
+
+            game_make_move(&mut board_parent.game_board, move_code);
+
             board_parent.just_moved = true;
 
             print_move_command_debug(move_code);
-            println!("{}", board_to_fen(&board_parent.board));
+            println!("{}", board_to_fen(&board_parent.game_board.board));
 
-            let board_game_state = get_gamestate(&board_parent.board);
+            let game_board_state = get_gamestate(&board_parent.game_board);
 
             // the game ended
-            if board_game_state != 0{
+            if game_board_state != 0{
                 return;
             }
 
-            board_tx.0.lock().unwrap().send(board_parent.board.clone()).unwrap();
-                    
-            // Perform the move search (replace with your actual logic)
-            // let mv = get_best_move_depth_search(&board_parent.board, 4);
-            // make_move(&mut board_parent.board, mv.mv);
-    
-            
+            // ask the move thread to make a move
+            board_tx.0.lock().unwrap().send(board_parent.game_board.clone()).unwrap();
         }
     }
 }

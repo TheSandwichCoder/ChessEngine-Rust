@@ -35,7 +35,7 @@ const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8); 6] = [
     add_king_moves
 ];
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct ChessBoard{
     pub piece_bitboards: [u64; 12],
     pub piece_array: [u8; 64],
@@ -1113,58 +1113,4 @@ pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
             
         }
     }
-}
-
-// 0 - still going
-// 1 - white checkmate
-// 2 - black checkmate
-// 3 - draw
-pub fn get_gamestate(chess_board: &ChessBoard) -> u8{
-    let mut move_vec: Vec<u16> = Vec::new();
-
-    get_moves(&chess_board, &mut move_vec);
-
-    // no moves
-    if move_vec.len() == 0{
-        if chess_board.check_mask != 0{
-            if chess_board.board_color{
-                return 2;
-            }
-            else{
-                return 1;
-            }
-        }
-
-        else{
-            // stalemate
-            return 3;
-        }
-    }
-
-      
-
-    let total_bishop_num = chess_board.piece_bitboards[1].count_ones() + chess_board.piece_bitboards[7].count_ones();
-    let total_knight_num = chess_board.piece_bitboards[2].count_ones() + chess_board.piece_bitboards[8].count_ones();
-
-    // there is a pawn or queen or rooks on the board
-    if chess_board.piece_bitboards[0] | 
-    chess_board.piece_bitboards[6] | 
-    chess_board.piece_bitboards[4] | 
-    chess_board.piece_bitboards[10] |
-    chess_board.piece_bitboards[3] | 
-    chess_board.piece_bitboards[9] != 0{
-        return 0;
-    }
-
-    // there are less than 2 bishops
-    if total_bishop_num < 2{
-        return 3;
-    }
-
-    // there are less than 2 knights
-    if total_knight_num < 2{
-        return 3;
-    }
-
-    return 0;
 }

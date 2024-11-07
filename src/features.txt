@@ -1,0 +1,19 @@
+This file contains the features of the chess engine. and some of the goals
+
+I guess this is a temporary file but maybe not. 
+
+Features:
+- bitboard sliding piece lookup
+- minimax
+
+
+Goals:
+- game tree
+- transposition table
+- alpha beta
+- negamax
+- quiscience search
+- move priority search
+- endgame
+- pawn promotion
+- castling bias
