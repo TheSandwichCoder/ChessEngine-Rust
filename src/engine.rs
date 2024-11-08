@@ -7,6 +7,7 @@ use crate::board::*;
 use crate::evaluation::*;
 use crate::app_settings::SEARCH_DEPTH;
 use crate::game_board::*;
+use crate::zobrist_hash::*;
 
 #[derive(Copy, Clone)]
 pub struct MoveScorePair{
@@ -65,6 +66,33 @@ pub fn sub_perft(board: &ChessBoard, depth: u16){
     } 
 
     println!("Total: {}", total_counter);
+}
+
+pub fn debug_zobrist_hash(board: &ChessBoard, depth:u16){
+    // base case
+    if depth == 0{
+        return;
+    }
+
+    let mut move_vec: Vec<u16> = Vec::new();
+
+    get_moves(board, &mut move_vec);
+
+    let mut node_num: u32 = 0;
+    
+    for mv in move_vec{
+        let mut sub_board: ChessBoard = board.clone();
+
+        make_move(&mut sub_board, mv);
+
+        if sub_board.zobrist_hash != get_full_zobrist_hash(&sub_board){
+            println!("{} {}", sub_board.zobrist_hash, get_full_zobrist_hash(&sub_board));
+            println!("prev fen:{} mv:{}", board_to_fen(&board), get_move_string(mv));
+            return;
+        }
+
+        debug_zobrist_hash(&sub_board, depth - 1);
+    } 
 }
 
 pub fn debug(game_board: &mut GameChessBoard){
@@ -181,6 +209,20 @@ pub fn debug(game_board: &mut GameChessBoard){
             sub_perft(&game_board.board, depth);
         }
 
+        else if input_string == "debug z"{
+            input_string.clear();
+            print!("depth >>");
+            io::stdout().flush().unwrap();
+            
+            io::stdin()
+            .read_line(&mut input_string)
+            .expect("Failed to read line");
+
+            let depth: u16 = input_string.trim().parse().expect("cannot parse string to int");
+
+            debug_zobrist_hash(&game_board.board, depth);
+        }
+
         else if input_string == "best move"{
             input_string.clear();
             print!("depth >>");
@@ -208,6 +250,17 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, depth: u8) -> MoveSc
 }
 
 pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8) -> MoveScorePair{
+    let counter : u8 = add_to_game_tree(game_tree, chess_board.zobrist_hash);
+
+    // position repetition check
+    if counter >= 3{
+        remove_from_game_tree(game_tree, chess_board.zobrist_hash);
+        return MoveScorePair{
+            mv: 0,
+            score: 0,
+        };
+    }
+    
     let mut move_vec: Vec<u16> = Vec::new();
 
     get_moves(chess_board, &mut move_vec);
@@ -247,6 +300,7 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
                 mv: mv,
                 score: get_board_score(&sub_board),
             };
+
             unsafe{
                 node_counter += 1;
             };
@@ -267,7 +321,9 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
         }
+
     }
+    remove_from_game_tree(game_tree, chess_board.zobrist_hash);
 
     return best_mvel_pair;
 }

@@ -13,6 +13,7 @@ use evaluation::*;
 use app_settings::*;
 use app_pieces::*;
 use game_board::*;
+use zobrist_hash::*;
 
 mod board;
 mod move_compute;
@@ -21,6 +22,7 @@ mod magic_numbers;
 mod engine;
 mod evaluation;
 mod game_board;
+mod zobrist_hash;
 
 mod app_settings;
 mod app_pieces;
@@ -29,47 +31,38 @@ mod app_pieces;
 struct replayText;
 
 fn main() {
-    // App::new()
-    // .add_plugins((
-    //     DefaultPlugins
-    //     .set(ImagePlugin::default_nearest())
-    //     .set(WindowPlugin {
-    //         primary_window: Some(Window{
-    //             title: "Rust Chess".into(),
-    //             resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
-    //             resizable:false,
-    //             enabled_buttons: bevy::window::EnabledButtons {
-    //                 maximize: false,
-    //                 ..Default::default()
-    //             },
-    //             ..default()
-    //         }),
-    //         ..default()
-    //     })
-    //     .build(),
-    // ))
-    // .init_state::<GameState>()
-    // .add_plugins(BoardPlugin)
-    // .add_systems(Startup, setup)
-    // .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
-    // .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
+    App::new()
+    .add_plugins((
+        DefaultPlugins
+        .set(ImagePlugin::default_nearest())
+        .set(WindowPlugin {
+            primary_window: Some(Window{
+                title: "Rust Chess".into(),
+                resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
+                resizable:false,
+                enabled_buttons: bevy::window::EnabledButtons {
+                    maximize: false,
+                    ..Default::default()
+                },
+                ..default()
+            }),
+            ..default()
+        })
+        .build(),
+    ))
+    .init_state::<GameState>()
+    .add_plugins(BoardPlugin)
+    .add_systems(Startup, setup)
+    .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
+    .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
 
-    // .add_systems(Update, play_again_inputs)
-    // .run();
+    .add_systems(Update, play_again_inputs)
+    .run();
 
     let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
 
     debug(&mut chess_board);
 }
-
-// move
-// f5e4
-// move
-// c1g5
-// move
-// h6f6
-// move
-// d1f3
 
 fn setup(
     mut commands: Commands, 
@@ -181,7 +174,6 @@ fn play_again_inputs(
     current_state: Res<State<GameState>>,
     mut next_state: ResMut<NextState<GameState>>
 ){
-
     match current_state.get() {
         GameState::Playing =>{},
         _ =>{
@@ -190,5 +182,4 @@ fn play_again_inputs(
             }
         },
     }
-
 }

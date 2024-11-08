@@ -6,6 +6,7 @@
 
 use crate::move_compute::*;
 use crate::functions::*;
+use crate::zobrist_hash::*;
 
 const PIECE_TYPE_STRING: &str = "PBNRQKpbnrqk/";
 
@@ -53,6 +54,7 @@ pub struct ChessBoard{
 
     pub board_color: bool,
 
+    pub zobrist_hash: u64,
 }
 
 fn create_empty_board() -> ChessBoard{
@@ -69,6 +71,8 @@ fn create_empty_board() -> ChessBoard{
         pin_mask: 0,
         attack_mask: 0,
         board_color: false,
+
+        zobrist_hash: 0,
     }
 }
 
@@ -228,6 +232,8 @@ pub fn print_board_info(chess_board: &ChessBoard){
     // print fen string
     println!("fen: {}", board_to_fen(&chess_board));
 
+    println!("zobrist: {}", chess_board.zobrist_hash);
+
 }
 
 pub fn fen_to_board(fen_string: &str) -> ChessBoard{
@@ -240,6 +246,7 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     let mut fen_string_part: i32 = 0;
     let mut enpassant_square: u16 = 0;
 
+    // actual fen string stuff
     for p in fen_string.chars() {
         if p == ' '{
             fen_string_part += 1;
@@ -310,12 +317,15 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
         }
     }
 
+    // updates
     chess_board.board_info |= castle_priv;
-    // chess_board.board_info |= move_turn<<15;
     chess_board.board_color = move_turn == 1;
     chess_board.board_info |= enpassant_square << 4;
 
     update_board(&mut chess_board);
+
+    // zobrist
+    chess_board.zobrist_hash = get_full_zobrist_hash(&chess_board);
     
     return chess_board;
 }
@@ -424,14 +434,22 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
 
     let special: u8 = ((mv >> 12) & MOVE_DECODER_MASK) as u8;
 
+    let previous_board_info = chess_board.board_info;
+
     let piece_type: usize = chess_board.piece_array[from_square as usize] as usize;
     let piece_color_offset: u8;
 
     let is_piece_capture: bool = chess_board.all_piece_bitboard & 1<<to_square != 0;
 
+    let mut update_zobrist_castle: bool = false;
+
     // normal movement
     chess_board.piece_bitboards[piece_type-1] ^= from_square_bitboard;
     chess_board.piece_bitboards[piece_type-1] ^= to_square_bitboard;
+
+    // update zobrist hash for moved piece 
+    chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index((piece_type-1) as u8, from_square)];
+    chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index((piece_type-1) as u8, to_square)];
 
     // piece is taken
     if is_piece_capture{
@@ -462,9 +480,13 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 }
             }
             
+            update_zobrist_castle = true;
         }
 
         chess_board.piece_bitboards[taken_piece_type as usize] ^= to_square_bitboard;
+        
+        // updates the piece zobrist
+        chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(taken_piece_type, to_square)];
     }
 
     // update castle permission
@@ -488,6 +510,8 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.board_info &= !(0x1);
             }
         }
+        
+        update_zobrist_castle = true;
     }
 
     // disallow castling once king moves
@@ -497,8 +521,8 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
         }
         else{
             chess_board.board_info &= !(0x3);
-
         }
+        update_zobrist_castle = true;
     }
 
     chess_board.piece_array[from_square as usize] = 0;
@@ -530,14 +554,25 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
     chess_board.all_piece_bitboard ^= from_square_bitboard;
     chess_board.all_piece_bitboard ^= to_square_bitboard;
 
-    // get rid of the double move
-    chess_board.board_info &= ENPASSANT_CLEAR_MASK;
+    // need to clear double move from zobrist
+    if chess_board.board_info & !ENPASSANT_CLEAR_MASK != 0{
+        let enpassant_column : u8 = (chess_board.board_info >> 4) as u8;
+
+        chess_board.zobrist_hash ^= zobrist_hash_table[ENPASSANT_INDEX_START + enpassant_column as usize];
+
+        // get rid of the double move
+        chess_board.board_info &= ENPASSANT_CLEAR_MASK;
+    }
 
     // special movement
     if special > 0{
         if special == 2{
+            let enpassant_column = (from_square % 8 + 1) as u16;
             // add new possible en passant
-            chess_board.board_info |= ((from_square % 8 + 1) as u16) << 4;
+            chess_board.board_info |= enpassant_column << 4;
+
+            // add the enpassant hash
+            chess_board.zobrist_hash ^= zobrist_hash_table[ENPASSANT_INDEX_START + enpassant_column as usize];
         }
         // enpassant
         else if special == 3{
@@ -550,6 +585,8 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 
                 chess_board.all_piece_bitboard ^= capture_bitboard;
                 chess_board.black_piece_bitboard ^= capture_bitboard;
+
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(6, to_square+8)];
             }
             else{
                 let capture_bitboard: u64 = 1 << (to_square - 8);
@@ -559,6 +596,8 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
 
                 chess_board.all_piece_bitboard ^= capture_bitboard;
                 chess_board.white_piece_bitboard ^= capture_bitboard;
+
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(0, to_square-8)];
             }
         }
 
@@ -578,6 +617,12 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
 
             // add new piece to piece array
             chess_board.piece_array[to_square as usize] = promotion_piece_type + switched_piece_color_offset + 1;
+
+            // get rid of pawn there
+            chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index((piece_type-1) as u8, to_square)];
+
+            // add new piece there
+            chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index((promotion_piece_type + switched_piece_color_offset) as u8, to_square)];
         }
 
         // castling
@@ -593,6 +638,10 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_array[59] = 4;
 
                 chess_board.board_info &= !0xC;
+
+                // update rook zobrist hash
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(3, 56)];
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(3, 59)];
             }
             else if special == 10{
                 chess_board.piece_bitboards[3] ^= WHITE_RIGHT_ROOK_DEFAULT;
@@ -605,6 +654,10 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_array[61] = 4;
 
                 chess_board.board_info &= !0xC;
+
+                // update rook zobrist hash
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(3, 63)];
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(3, 61)];
             }
 
             else if special == 11{
@@ -618,6 +671,10 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_array[3] = 10;
 
                 chess_board.board_info &= !0x3;
+
+                // update rook zobrist hash
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(9, 0)];
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(9, 3)];
             }
 
             else{
@@ -631,14 +688,33 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
                 chess_board.piece_array[5] = 10;
 
                 chess_board.board_info &= !0x3;
+
+                // update rook zobrist hash
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(9, 7)];
+                chess_board.zobrist_hash ^= zobrist_hash_table[get_zobrist_piece_index(9, 5)];
             }
+
+            update_zobrist_castle = true;
 
             chess_board.all_piece_bitboard = chess_board.black_piece_bitboard | chess_board.white_piece_bitboard;
         }
     }
 
-    // flip the baord color
+    // some castle permissions were changed
+    if update_zobrist_castle{
+        let prev_castle_info : usize = (previous_board_info & 0xF) as usize;
+        let curr_castle_info: usize = (chess_board.board_info & 0xF) as usize;
+        
+        chess_board.zobrist_hash ^= zobrist_hash_table[CASTLING_INDEX_START + prev_castle_info];
+        chess_board.zobrist_hash ^= zobrist_hash_table[CASTLING_INDEX_START + curr_castle_info];
+    }
+
+    // flip the board color
     chess_board.board_color = !chess_board.board_color;
+
+    // flip the color for zobrist hash
+    chess_board.zobrist_hash ^= BOARD_COLOR_HASH;
+
     update_board(chess_board);
 }
 
@@ -879,7 +955,7 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
                                 chess_board.pin_mask |= pawn_infront_square;
                                 
                                 // make sure there is nothing infront pawn
-                                if pin_square - 16 >= 0 && pawn_infront_square & chess_board.all_piece_bitboard == 0{
+                                if pin_square - 8 >= 8 && pawn_infront_square & chess_board.all_piece_bitboard == 0{
                                     chess_board.pin_mask |= 1<< (pin_square - 16);
                                 }
                             }
