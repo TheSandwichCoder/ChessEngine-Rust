@@ -59,9 +59,9 @@ fn main() {
     .add_systems(Update, play_again_inputs)
     .run();
 
-    let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
+    // let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
 
-    debug(&mut chess_board);
+    // debug(&mut chess_board);
 }
 
 fn setup(

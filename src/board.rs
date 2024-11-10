@@ -57,7 +57,7 @@ pub struct ChessBoard{
     pub zobrist_hash: u64,
 }
 
-fn create_empty_board() -> ChessBoard{
+pub fn create_empty_board() -> ChessBoard{
     return ChessBoard{
         piece_bitboards:[0; 12],
         piece_array: [0; 64],

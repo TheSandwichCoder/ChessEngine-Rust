@@ -1,6 +1,9 @@
 use std::io::{self, Write};
 use std::collections::HashMap;
+use std::fs;
 
+
+use crate::app_settings::ENGINE_VERSION;
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
@@ -19,6 +22,153 @@ pub fn create_empty_MoveScorePair() -> MoveScorePair{
     return MoveScorePair{
         mv: 0,
         score: 0,
+    }
+}
+
+// Encoding Scheme (not UCI for reasons)
+// for more information -> main.py
+
+// server - this program
+// client - chess engine program
+
+// server -> client
+// 0 - end program
+// 1 - send fen string and initialisation text
+// 2 - wait for server
+// 3 - inform move
+
+// client -> server
+// 4 - client ready confirmation
+// 5 - supply move
+// 6 - wait for client
+
+pub fn chess_battle(){
+    println!("CHESS BATTLE: VERSION {}", ENGINE_VERSION);
+
+    let mut file_path_choice: String = String::new();
+
+    print!("filepath (0/1) >>");
+    io::stdout().flush().unwrap();
+    
+    io::stdin()
+    .read_line(&mut file_path_choice)
+    .expect("Failed to read line");
+
+    file_path_choice = file_path_choice.trim().to_string();
+
+    let file_path : String;
+
+    if file_path_choice == "0"{
+        file_path = "ChessBot1.txt".to_string();
+    }
+    else{
+        file_path = "ChessBot2.txt".to_string();
+    }
+
+    let mut running: bool = true;
+    
+    // tells the bot when to move
+    let mut move_now : bool = false;
+
+    let mut game_board : GameChessBoard = create_empty_GameChessBoard(); 
+
+    while running{
+        let mut contents = String::new();
+
+        // do it in a scope so file is closed
+        {
+            contents = fs::read_to_string(file_path.clone()).unwrap();
+        }
+
+        if contents == ""{
+            continue
+        }
+
+        let command_char : char = contents.chars().nth(0).unwrap();
+
+        let command : i32 = command_char.to_digit(10).unwrap() as i32;
+
+        // close program
+        if command == 0{
+            {
+                // tell it that it has no life plans
+                fs::write(file_path.clone(), "4|NANANA");
+            }
+
+            running = false;
+        }
+
+        // initialisation text
+        else if command == 1{
+            
+            let move_turn_char : char = contents.chars().nth(2).unwrap();
+
+            let fen_string : &str = &contents[3..contents.len()];
+
+            game_board = fen_to_GameChessBoard(fen_string);
+
+            println!("GAME BOARD INITIALISED");
+            print_game_board(&game_board);
+
+            // to move
+            if move_turn_char == '1'{
+                {
+                    // thinking
+                    fs::write(file_path.clone(), "6|NANANA");
+                }
+
+                move_now = true;
+            }
+            else{
+                {
+                    // ready confirmation
+                    fs::write(file_path.clone(), "4|NANANA");
+                }
+            }
+        }
+
+        // received opponents move
+        else if command == 3{
+            let move_code_string : &str = &contents[2..contents.len()];
+
+            let move_code : u16 = move_code_string.parse().unwrap();
+
+            println!("Received move: {}", get_move_string(move_code));
+
+            game_make_move(&mut game_board, move_code);
+
+            {
+                // thinking
+                fs::write(file_path.clone(), "6|NANANA");
+            }
+
+            move_now = true;
+        }
+
+        // should move now
+        if move_now{
+            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, 4);
+
+            println!("Move: {} {}", get_move_string(mvel_pair.mv), mvel_pair.score);            
+
+            game_make_move(&mut game_board, mvel_pair.mv);
+
+            // print_game_board(&game_board);
+            
+            // print_game_tree(&game_board);
+
+            {
+                // update the fen position lookup
+                fs::write("FenPositionLookup.txt", format!("{}|{}", get_gamestate(&game_board), board_to_fen(&game_board.board)));
+
+                // provide move
+                fs::write(file_path.clone(), format!("5|{}",mvel_pair.mv));
+            }
+
+            move_now = false;
+        }
+
+        
     }
 }
 
@@ -121,6 +271,13 @@ pub fn debug(game_board: &mut GameChessBoard){
 
         else if input_string == "show info"{
             print_game_board_info(&game_board);
+        }
+
+        else if input_string == "battle"{
+            chess_battle();
+
+            // automatically exit after finished
+            debug_running = false;
         }
 
         else if input_string == "fen"{
@@ -249,18 +406,7 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, depth: u8) -> MoveSc
     return get_best_move_depth_search(&game_chess_board.board, &mut game_chess_board.game_tree, depth);
 }
 
-pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8) -> MoveScorePair{
-    let counter : u8 = add_to_game_tree(game_tree, chess_board.zobrist_hash);
-
-    // position repetition check
-    if counter >= 3{
-        remove_from_game_tree(game_tree, chess_board.zobrist_hash);
-        return MoveScorePair{
-            mv: 0,
-            score: 0,
-        };
-    }
-    
+pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8) -> MoveScorePair{    
     let mut move_vec: Vec<u16> = Vec::new();
 
     get_moves(chess_board, &mut move_vec);
@@ -270,11 +416,12 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
         score: 0,
     };
 
+    // these values are to force the engine to choose a move
     if chess_board.board_color{
-        best_mvel_pair.score = -10000;
+        best_mvel_pair.score = -10001;
     }
     else{
-        best_mvel_pair.score = 10000;
+        best_mvel_pair.score = 10001;
     }
 
     // no legal moves
@@ -285,17 +432,36 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
         }
         
         // checkmate
-        return best_mvel_pair;
+        else{
+            if chess_board.board_color{
+                best_mvel_pair.score = 10000;
+            }
+
+            else{
+                best_mvel_pair.score = -10000;
+            }
+        }
+
+        return best_mvel_pair
     }
 
     for mv in move_vec{
         let mut sub_board: ChessBoard = chess_board.clone();
+        let mvel_pair: MoveScorePair;
 
         make_move(&mut sub_board, mv);
 
-        let mvel_pair: MoveScorePair;
+        let counter : u8 = add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-        if depth == 1{
+        // position repetition check
+        if counter >= 3{
+            mvel_pair = MoveScorePair{
+                mv: 0,
+                score: 0,
+            };
+        }
+
+        else if depth == 1{
             mvel_pair = MoveScorePair{
                 mv: mv,
                 score: get_board_score(&sub_board),
@@ -322,8 +488,9 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
             best_mvel_pair.mv = mv;
         }
 
+        remove_from_game_tree(game_tree, sub_board.zobrist_hash);
     }
-    remove_from_game_tree(game_tree, chess_board.zobrist_hash);
+    
 
     return best_mvel_pair;
 }

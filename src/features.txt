@@ -5,10 +5,11 @@ I guess this is a temporary file but maybe not.
 Features:
 - bitboard sliding piece lookup
 - minimax
-
+- game tree
+- battle
+- draw by repition
 
 Goals:
-- game tree
 - transposition table
 - alpha beta
 - negamax

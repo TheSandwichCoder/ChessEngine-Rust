@@ -2,12 +2,20 @@ use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
 use crate::game_board::*;
+use crate::app_settings::MOVE_LIMIT_MAX;
 
 // 0 - still going
 // 1 - white checkmate
 // 2 - black checkmate
 // 3 - draw
 pub fn get_gamestate(game_board: &GameChessBoard) -> u8{
+    for (_, counter) in &game_board.game_tree {
+        // repeated 3 times. Draw
+        if *counter >= 3{
+            return 3;
+        }
+    }
+
     let mut move_vec: Vec<u16> = Vec::new();
 
     let chess_board : &ChessBoard = &game_board.board; 
@@ -31,7 +39,10 @@ pub fn get_gamestate(game_board: &GameChessBoard) -> u8{
         }
     }
 
-      
+    // this code should be temporary but who knows
+    if game_board.move_limit >= MOVE_LIMIT_MAX{
+        return 3;
+    }
 
     let total_bishop_num = chess_board.piece_bitboards[1].count_ones() + chess_board.piece_bitboards[7].count_ones();
     let total_knight_num = chess_board.piece_bitboards[2].count_ones() + chess_board.piece_bitboards[8].count_ones();
