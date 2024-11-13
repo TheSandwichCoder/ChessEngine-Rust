@@ -434,11 +434,11 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
         // checkmate
         else{
             if chess_board.board_color{
-                best_mvel_pair.score = 10000;
+                best_mvel_pair.score = -10000;
             }
 
             else{
-                best_mvel_pair.score = -10000;
+                best_mvel_pair.score = 10000;
             }
         }
 

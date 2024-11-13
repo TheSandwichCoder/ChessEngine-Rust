@@ -14,4 +14,4 @@ pub const SCALE_FACTOR: f32 = SQUARE_SIZE / IMAGE_SIZES;
 pub const DEFAULT_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 pub const SEARCH_DEPTH: u8 = 5;
 
-pub const MOVE_LIMIT_MAX : u16 = 100;
+pub const MOVE_LIMIT_MAX : u16 = 200;

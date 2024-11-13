@@ -64,6 +64,11 @@ fn main() {
     // debug(&mut chess_board);
 }
 
+// fen
+// k7/4p3/8/K2P3r/8/8/8 b - - 0 1
+// 8/8/8/8/1k1p3Q/8/4P1K1 w - - 0 1
+
+
 fn setup(
     mut commands: Commands, 
     mut meshes: ResMut<Assets<Mesh>>,
