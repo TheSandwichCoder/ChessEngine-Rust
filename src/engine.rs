@@ -1,14 +1,16 @@
 use std::io::{self, Write};
 use std::collections::HashMap;
+use std::ops::Neg;
 use std::fs;
 
 
 use crate::app_settings::ENGINE_VERSION;
+use crate::app_settings::BATTLE_DEPTH;
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
 use crate::evaluation::*;
-use crate::app_settings::SEARCH_DEPTH;
+use crate::app_settings::DEFAULT_SEARCH_DEPTH;
 use crate::game_board::*;
 use crate::zobrist_hash::*;
 
@@ -18,10 +20,20 @@ pub struct MoveScorePair{
     pub score: i16,
 }
 
-pub fn create_empty_MoveScorePair() -> MoveScorePair{
-    return MoveScorePair{
-        mv: 0,
-        score: 0,
+impl MoveScorePair {
+    fn new(mv: u16, score: i16) -> MoveScorePair {
+        MoveScorePair { mv, score }
+    }
+}
+
+impl Neg for MoveScorePair {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            mv: self.mv,
+            score: -self.score,
+        }
     }
 }
 
@@ -147,7 +159,7 @@ pub fn chess_battle(){
 
         // should move now
         if move_now{
-            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, 4);
+            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, BATTLE_DEPTH);
 
             println!("Move: {} {}", get_move_string(mvel_pair.mv), mvel_pair.score);            
 
@@ -401,28 +413,49 @@ pub fn debug(game_board: &mut GameChessBoard){
 }
 
 static mut node_counter: u32 = 0;
+const INF: i16 = 32767;
 
-pub fn get_best_move(game_chess_board: &mut GameChessBoard, depth: u8) -> MoveScorePair{
-    return get_best_move_depth_search(&game_chess_board.board, &mut game_chess_board.game_tree, depth);
+const debug_filepath: &'static str = "debug.txt";
+
+fn add_debug_record(s: &str, depth:u8){
+    let mut data_file = fs::OpenOptions::new()
+        .append(true)
+        .open(debug_filepath)
+        .expect("cannot open file");
+
+    // Write to a file
+
+    for i in 0..6-depth{
+        data_file
+        .write("\t".as_bytes())
+        .expect("write failed");
+    }
+
+    data_file
+        .write(format!("{}\n", s).as_bytes())
+        .expect("write failed");
 }
 
-pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8) -> MoveScorePair{    
+static mut CURR_SEARCH_DEPTH : u8 = DEFAULT_SEARCH_DEPTH;
+
+pub fn get_best_move(game_chess_board: &mut GameChessBoard, depth: u8) -> MoveScorePair{
+    unsafe{CURR_SEARCH_DEPTH = depth;}
+
+    return get_best_move_negamax(&game_chess_board.board, &mut game_chess_board.game_tree, depth, -INF, INF);
+}
+
+pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8, mut alpha: i16, mut beta: i16) -> MoveScorePair{
+    if depth == 0{
+        unsafe{node_counter += 1;}
+
+        return MoveScorePair::new(0, get_board_score(chess_board));
+    }
+
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
+
     let mut move_vec: Vec<u16> = Vec::new();
 
     get_moves(chess_board, &mut move_vec);
-
-    let mut best_mvel_pair: MoveScorePair = MoveScorePair{
-        mv: 0,
-        score: 0,
-    };
-
-    // these values are to force the engine to choose a move
-    if chess_board.board_color{
-        best_mvel_pair.score = -10001;
-    }
-    else{
-        best_mvel_pair.score = 10001;
-    }
 
     // no legal moves
     if move_vec.len() == 0{
@@ -433,13 +466,8 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
         
         // checkmate
         else{
-            if chess_board.board_color{
-                best_mvel_pair.score = -10000;
-            }
-
-            else{
-                best_mvel_pair.score = 10000;
-            }
+            // shift the checkmate so closer checkmates are preffered
+            best_mvel_pair.score = -10000 - (depth as i16);
         }
 
         return best_mvel_pair
@@ -455,42 +483,37 @@ pub fn get_best_move_depth_search(chess_board: &ChessBoard, game_tree: &mut Hash
 
         // position repetition check
         if counter >= 3{
-            mvel_pair = MoveScorePair{
-                mv: 0,
-                score: 0,
-            };
-        }
-
-        else if depth == 1{
-            mvel_pair = MoveScorePair{
-                mv: mv,
-                score: get_board_score(&sub_board),
-            };
-
-            unsafe{
-                node_counter += 1;
-            };
+            mvel_pair = MoveScorePair::new(0, 0);
         }
 
         else{
-            mvel_pair = get_best_move_depth_search(&sub_board, game_tree, depth - 1);
+            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, depth - 1, -beta, -alpha);
 
-            if depth == SEARCH_DEPTH{
-                unsafe{
+            unsafe{
+                if depth == CURR_SEARCH_DEPTH{
                     println!("move searched: {} {} {}", get_move_string(mv), mvel_pair.score, node_counter);
                     node_counter = 0;
-                };
+                }
             }
         }
 
-        if (mvel_pair.score > best_mvel_pair.score) == chess_board.board_color{
+        if mvel_pair.score >= beta{
+            remove_from_game_tree(game_tree, sub_board.zobrist_hash);
+            return mvel_pair;
+        }
+
+        if mvel_pair.score > best_mvel_pair.score{
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
+
+            if mvel_pair.score > alpha{
+                alpha = mvel_pair.score;
+            }
         }
 
         remove_from_game_tree(game_tree, sub_board.zobrist_hash);
     }
-    
 
     return best_mvel_pair;
 }
+

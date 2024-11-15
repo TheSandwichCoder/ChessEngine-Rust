@@ -8,11 +8,12 @@ Features:
 - game tree
 - battle
 - draw by repition
+- alpha beta
+- negamax
 
 Goals:
 - transposition table
-- alpha beta
-- negamax
+- iterative deepening
 - quiscience search
 - move priority search
 - endgame

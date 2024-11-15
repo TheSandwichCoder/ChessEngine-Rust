@@ -106,5 +106,12 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
 
     score += get_board_piece_value_score(board);
 
-    return score;
+    // relative evaluation due to negamax
+    if board.board_color{
+        return score;
+    }
+    else{
+        return -score;
+    }
+    
 }
