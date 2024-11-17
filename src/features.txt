@@ -10,10 +10,10 @@ Features:
 - draw by repition
 - alpha beta
 - negamax
+- iterative deepening
 
 Goals:
 - transposition table
-- iterative deepening
 - quiscience search
 - move priority search
 - endgame

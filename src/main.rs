@@ -14,6 +14,7 @@ use app_settings::*;
 use app_pieces::*;
 use game_board::*;
 use zobrist_hash::*;
+use timer::*;
 
 mod board;
 mod move_compute;
@@ -26,6 +27,7 @@ mod zobrist_hash;
 
 mod app_settings;
 mod app_pieces;
+mod timer;
 
 #[derive(Component)]
 struct replayText;

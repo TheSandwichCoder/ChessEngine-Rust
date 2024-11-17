@@ -1,18 +1,19 @@
 use std::io::{self, Write};
 use std::collections::HashMap;
+use std::time::Duration;
 use std::ops::Neg;
 use std::fs;
 
 
-use crate::app_settings::ENGINE_VERSION;
-use crate::app_settings::BATTLE_DEPTH;
+use crate::app_settings::*;
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::board::*;
 use crate::evaluation::*;
-use crate::app_settings::DEFAULT_SEARCH_DEPTH;
 use crate::game_board::*;
 use crate::zobrist_hash::*;
+use crate::timer::Timer;
+
 
 #[derive(Copy, Clone)]
 pub struct MoveScorePair{
@@ -159,7 +160,7 @@ pub fn chess_battle(){
 
         // should move now
         if move_now{
-            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, BATTLE_DEPTH);
+            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, BATTLE_THINK_TIME);
 
             println!("Move: {} {}", get_move_string(mvel_pair.mv), mvel_pair.score);            
 
@@ -302,8 +303,13 @@ pub fn debug(game_board: &mut GameChessBoard){
             .expect("Failed to read line");
 
             input_string = input_string.trim().to_string();
-            
-            game_board.board = fen_to_board(&input_string);
+
+            if input_string == "default"{
+                game_board.board = fen_to_board(&DEFAULT_FEN);
+            }
+            else{
+                game_board.board = fen_to_board(&input_string);
+            }
         }
 
         else if input_string == "move"{
@@ -415,36 +421,67 @@ pub fn debug(game_board: &mut GameChessBoard){
 static mut node_counter: u32 = 0;
 const INF: i16 = 32767;
 
-const debug_filepath: &'static str = "debug.txt";
-
-fn add_debug_record(s: &str, depth:u8){
-    let mut data_file = fs::OpenOptions::new()
-        .append(true)
-        .open(debug_filepath)
-        .expect("cannot open file");
-
-    // Write to a file
-
-    for i in 0..6-depth{
-        data_file
-        .write("\t".as_bytes())
-        .expect("write failed");
-    }
-
-    data_file
-        .write(format!("{}\n", s).as_bytes())
-        .expect("write failed");
-}
-
 static mut CURR_SEARCH_DEPTH : u8 = DEFAULT_SEARCH_DEPTH;
 
-pub fn get_best_move(game_chess_board: &mut GameChessBoard, depth: u8) -> MoveScorePair{
-    unsafe{CURR_SEARCH_DEPTH = depth;}
+pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u8) -> MoveScorePair{
+    // unsafe{CURR_SEARCH_DEPTH = depth;}
 
-    return get_best_move_negamax(&game_chess_board.board, &mut game_chess_board.game_tree, depth, -INF, INF);
+    return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, time_alloc);
+    // return get_best_move_negamax(&game_chess_board.board, &mut game_chess_board.game_tree, depth, -INF, INF);
 }
 
-pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8, mut alpha: i16, mut beta: i16) -> MoveScorePair{
+// heavily inspired by pleco engine... again
+pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, time_alloc: u8) -> MoveScorePair{
+    let timer: Timer = Timer::new(Duration::new(time_alloc as u64, 0));
+
+    let depth: u8 = 7;
+    let mut best_mvel = MoveScorePair::new(0, -INF);
+
+    let mut alpha : i16 = -INF;
+    let mut beta : i16 = INF;
+
+    unsafe{CURR_SEARCH_DEPTH = depth;}
+
+    let mut curr_depth = 2;
+
+    while curr_depth < MAX_SEARCH_DEPTH{
+        if timer.time_out(){
+            println!("TIME OUT");
+            break;
+        }
+
+        let mvel : MoveScorePair = get_best_move_negamax(chess_board, game_tree, curr_depth, alpha, beta, &timer);
+
+        if mvel.score >= beta{
+            println!("RESTART SEARCH - BETA");
+            beta = INF;
+        }
+        else if mvel.score <= alpha{
+            println!("RESTART SEARCH - ALPHA");
+            alpha = -INF;
+        }
+        else{
+            // move was null
+            if mvel.mv != 0{
+                alpha = mvel.score - 100;
+                beta = mvel.score + 100;
+                unsafe{
+                    println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv));
+                    node_counter = 0;
+                }
+                
+                best_mvel = mvel;
+            }
+            
+            curr_depth += 1;
+        }
+    
+    }
+
+    return best_mvel;
+}
+
+pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if depth == 0{
         unsafe{node_counter += 1;}
 
@@ -474,6 +511,9 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
     }
 
     for mv in move_vec{
+        if timer.time_out(){
+            return MoveScorePair::new(0, -INF);
+        }
         let mut sub_board: ChessBoard = chess_board.clone();
         let mvel_pair: MoveScorePair;
 
@@ -487,14 +527,14 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, depth - 1, -beta, -alpha);
+            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, depth - 1, -beta, -alpha, timer);
 
-            unsafe{
-                if depth == CURR_SEARCH_DEPTH{
-                    println!("move searched: {} {} {}", get_move_string(mv), mvel_pair.score, node_counter);
-                    node_counter = 0;
-                }
-            }
+            // unsafe{
+            //     if depth == CURR_SEARCH_DEPTH{
+            //         println!("move searched: {} {} {}", get_move_string(mv), mvel_pair.score, node_counter);
+            //         node_counter = 0;
+            //     }
+            // }
         }
 
         if mvel_pair.score >= beta{
