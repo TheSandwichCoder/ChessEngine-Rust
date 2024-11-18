@@ -400,18 +400,18 @@ pub fn debug(game_board: &mut GameChessBoard){
 
         else if input_string == "best move"{
             input_string.clear();
-            print!("depth >>");
+            print!("think time (ms)>>");
             io::stdout().flush().unwrap();
             
             io::stdin()
             .read_line(&mut input_string)
             .expect("Failed to read line");
 
-            let depth: u8 = input_string.trim().parse().expect("cannot parse string to int");
+            let think_time: u16 = input_string.trim().parse().expect("cannot parse string to int");
 
             // let best_move: MoveScorePair = get_best_move_depth_search(chess_board, depth);
 
-            let best_move: MoveScorePair = get_best_move(game_board, depth);
+            let best_move: MoveScorePair = get_best_move(game_board, think_time);
 
             println!("evaluation: {} score: {}", get_move_string(best_move.mv), best_move.score);
         }
@@ -421,17 +421,17 @@ pub fn debug(game_board: &mut GameChessBoard){
 static mut node_counter: u32 = 0;
 const INF: i16 = 32767;
 
-static mut CURR_SEARCH_DEPTH : u8 = DEFAULT_SEARCH_DEPTH;
+static mut CURR_SEARCH_DEPTH : u8 = 0;
 
-pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u8) -> MoveScorePair{
+pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u16) -> MoveScorePair{
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
     return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, time_alloc);
 }
 
 // heavily inspired by pleco engine... again
-pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, time_alloc: u8) -> MoveScorePair{
-    let timer: Timer = Timer::new(Duration::new(time_alloc as u64, 0));
+pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, time_alloc: u16) -> MoveScorePair{
+    let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
     let mut best_mvel = MoveScorePair::new(0, -INF);

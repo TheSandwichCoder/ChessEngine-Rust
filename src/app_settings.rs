@@ -12,9 +12,9 @@ pub const IMAGE_SIZES: f32 = 100.0;
 pub const SCALE_FACTOR: f32 = SQUARE_SIZE / IMAGE_SIZES; 
 
 pub const DEFAULT_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-pub const DEFAULT_SEARCH_DEPTH: u8 = 6;
+pub const DEFAULT_THINK_TIME: u16 = 500;
 pub const MAX_SEARCH_DEPTH: u8 = 10;
 pub const BATTLE_DEPTH: u8 = 5;
-pub const BATTLE_THINK_TIME: u8 = 1;
+pub const BATTLE_THINK_TIME: u16 = 200;
 
 pub const MOVE_LIMIT_MAX : u16 = 200;

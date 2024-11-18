@@ -90,7 +90,7 @@ fn engine_move_handling() -> (Receiver<u16>, Sender<GameChessBoard>) {
             if let Ok(mut game_chess_board) = rx2.try_recv() {
                 // let mv : MoveScorePair = get_best_move_depth_search(&game_chess_board.chess_board, DEFAULT_SEARCH_DEPTH);
 
-                let mv: MoveScorePair = get_best_move(&mut game_chess_board, DEFAULT_SEARCH_DEPTH);
+                let mv: MoveScorePair = get_best_move(&mut game_chess_board, DEFAULT_THINK_TIME);
 
                 print_move_command_debug(mv.mv);
 

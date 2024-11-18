@@ -134,6 +134,8 @@ const BISHOP_KNIGHT_ENDGAME_BIAS_TABLE: [i16; 64] = [
      150,  100,  90,  70, -70, -90, -100, -150,
 ];
 
+
+
 pub fn reverse_piece_square_index(index: usize) -> usize{
     let y = index / 8;
     let x = index % 8;
