@@ -57,13 +57,10 @@ pub fn get_gamestate(game_board: &GameChessBoard) -> u8{
         return 0;
     }
 
-    // there are less than 2 bishops
-    if total_bishop_num < 2{
-        return 3;
-    }
+    println!("{}", total_bishop_num);
 
-    // there are less than 2 knights
-    if total_knight_num < 2{
+    // there are less than 2 bishops or less than 3 knights or less than 1 knight + bishop
+    if total_bishop_num < 2 && total_knight_num < 3 && total_bishop_num + total_knight_num < 2{
         return 3;
     }
 
@@ -85,26 +82,207 @@ const PIECE_TYPE_VALUES : [i16; 12] = [
     -1000,
 ];
 
-// eval based on piece value
-pub fn get_board_piece_value_score(board: &ChessBoard) -> i16{
+// pawns, rooks and queens increase value
+// bishops and knights decrease value
+// this is all arbitrary without any research
+const ENGAME_PIECE_TYPE_VALUES: [i16; 12] = [
+    200,
+    250,
+    250,
+    550,
+    1000,
+    1000,
+    -200,
+    -250,
+    -250,
+    -550,
+    -1000,
+    -1000,
+];
+
+// HIGHLY INSPIRED by Sebastian Lagues king square table
+const KING_PIECE_SQUARE_TABLE: [i16; 64] = [
+    -80,  -80,  -90,  -90,  -90,  -90,  -80,  -80,  
+    -80,  -80,  -80,  -90,  -90,  -80,  -80,  -80,  
+    -90,  -50,  -50,  -90,  -90,  -20,  -50,  -90,  
+    -50,  -50,  -50,  -90,  -90,  -50,  -50,  -50,  
+    -40,  -40,  -40,  -70,  -70,  -40,  -40,  -40,  
+    -20,  -20,  -20,  -50,  -50,  -20,  -20,  -20,  
+      5,    5,   -5,   -5,   -5,   -5,    5,    5,  
+     10,   20,   20,    0,    0,   20,   30,   20,
+];
+
+const KING_PIECE_SQUARE_ENDGAME_TABLE: [i16; 64] = [
+    -95,  -95,  -90,  -90,  -90,  -90,  -95,  -95,  
+    -95,  -50,  -50,  -50,  -50,  -50,  -50,  -95,  
+    -90,  -50,  -20,  -20,  -20,  -20,  -50,  -90,  
+    -90,  -50,  -20,    0,    0,  -20,  -50,  -90,  
+    -90,  -50,  -20,    0,    0,  -20,  -50,  -90,  
+    -90,  -50,  -20,  -20,  -20,  -20,  -50,  -90,  
+    -95,  -50,  -50,  -50,  -50,  -50,  -50,  -95,  
+    -95,  -95,  -90,  -90,  -90,  -90,  -95,  -95,
+];
+
+const BISHOP_KNIGHT_ENDGAME_BIAS_TABLE: [i16; 64] = [
+    -150, -100, -90,-70, 70, 90, 100, 150,
+    -100,   0,  0 ,   0,  0,  0,  0, 100,
+    -90,   0,  0 ,   0,  0,  0,  0, 90,
+    -70,   0,  0 ,   0,  0,  0,  0, 70,
+     70,   0,  0 ,   0,  0,  0,  0, -70,
+     90,   0,  0 ,   0,  0,  0,  0, -90,
+     100,   0,  0 ,   0,  0,  0,  0, -100,
+     150,  100,  90,  70, -70, -90, -100, -150,
+];
+
+pub fn reverse_piece_square_index(index: usize) -> usize{
+    let y = index / 8;
+    let x = index % 8;
+
+    return 7-y + x;
+}
+
+
+// 1 when highest, 0 at lowest
+pub fn get_endgame_weight(board: &ChessBoard) -> f32{
+    let num_pieces = board.all_piece_bitboard.count_ones();
+
+    // engame weight func - [(-n+40)/40]^2
+    let endgame_weight : f32 = (40-num_pieces) as f32 / 40.0;
+
+    return endgame_weight * endgame_weight;
+}
+
+pub fn king_engame_square_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
     let mut score: i16 = 0;
 
-    // skip the king
-    for i in 0..5{
-        score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
-    }
+    let white_king_square : usize = board.piece_bitboards[5].trailing_zeros() as usize;
+    let black_king_square : usize = board.piece_bitboards[11].trailing_zeros() as usize;
 
-    for i in 6..11{
-        score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
+    // disregard engame weight if its too low
+    if endgame_weight > 0.3{
+        let reversed_black = reverse_piece_square_index(black_king_square);
+
+        score += lerp_int(KING_PIECE_SQUARE_TABLE[white_king_square], KING_PIECE_SQUARE_ENDGAME_TABLE[white_king_square], endgame_weight);
+        score -= lerp_int(KING_PIECE_SQUARE_TABLE[reversed_black], KING_PIECE_SQUARE_ENDGAME_TABLE[reversed_black], endgame_weight);
+    }
+    else{
+        score += KING_PIECE_SQUARE_TABLE[white_king_square];
+        score -= KING_PIECE_SQUARE_TABLE[reverse_piece_square_index(black_king_square)];   
     }
 
     return score;
 }
 
+pub fn king_distance_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
+    if endgame_weight < 0.3{
+        return 0;
+    }
+
+    let white_king_square : i16 = board.piece_bitboards[5].trailing_zeros() as i16;
+    let black_king_square : i16 = board.piece_bitboards[11].trailing_zeros() as i16;
+
+    let distance : f32 = get_manhattan_distance(white_king_square, black_king_square) as f32;
+
+    let weight: f32 = (12.0 - distance) * endgame_weight * 10.0;
+
+    if board.board_color{
+        return weight as i16;
+    }
+    else{
+        return -(weight as i16);
+    }
+}
+
+// eval based on piece value
+pub fn get_board_piece_value_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+    let mut score: i16 = 0;
+
+    // only if this then we start lerping
+    if endgame_weight >= 0.3{
+        // skip the king
+        for i in 0..5{
+            let piece_num = board.piece_bitboards[i].count_ones() as i16;
+            score += lerp_int(PIECE_TYPE_VALUES[i], ENGAME_PIECE_TYPE_VALUES[i], endgame_weight) * piece_num;
+        }
+
+        for i in 6..11{
+            let piece_num = board.piece_bitboards[i].count_ones() as i16;
+            score += lerp_int(PIECE_TYPE_VALUES[i], ENGAME_PIECE_TYPE_VALUES[i], endgame_weight) * piece_num;
+        }
+    }
+
+    else{
+        // skip the king
+        for i in 0..5{
+            score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
+        }
+
+        for i in 6..11{
+            score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
+        }
+    }
+    
+    return score;
+}
+
+pub fn bishop_knight_endgame_bias(board: &ChessBoard, board_color: bool, endgame_weight: f32) -> i16{
+    
+    let bishop_bitboard: u64;
+    let opp_king_square: usize;
+
+    if board_color{
+        bishop_bitboard = board.piece_bitboards[1];
+        opp_king_square = board.piece_bitboards[11].trailing_zeros() as usize;
+    }
+    else{
+        bishop_bitboard = board.piece_bitboards[7];
+        opp_king_square = board.piece_bitboards[5].trailing_zeros() as usize;
+    }
+
+    // no bishop
+    if bishop_bitboard == 0{
+        return 0;
+    }
+
+    let bishop_square = bishop_bitboard.trailing_zeros();
+
+    let bishop_color : bool = bishop_square % 8 == bishop_square / 8;
+
+
+    let score: f32;
+    if bishop_color{
+        score = -BISHOP_KNIGHT_ENDGAME_BIAS_TABLE[opp_king_square] as f32 * endgame_weight;
+    }
+    else{
+        score = BISHOP_KNIGHT_ENDGAME_BIAS_TABLE[opp_king_square] as f32 * endgame_weight;
+    }
+
+
+    if board_color{
+        return score as i16;
+    }
+    else{
+        // println!("{} {}", -score, opp_king_square);
+        return -score as i16;
+    }
+}
+
 pub fn get_board_score(board: &ChessBoard) -> i16{
     let mut score: i16 = 0;
 
-    score += get_board_piece_value_score(board);
+    let endgame_weight : f32 = get_endgame_weight(board); 
+
+    score += get_board_piece_value_score(board, endgame_weight);
+
+    // prioritises king near center
+    score += king_engame_square_weight(board, endgame_weight);
+
+    // wants king to be closer to other king
+    score += king_distance_weight(board, endgame_weight);
+
+    // bishop knight endgame - king square favours corners
+    score += bishop_knight_endgame_bias(board, true, endgame_weight);
+    score += bishop_knight_endgame_bias(board, false, endgame_weight);
 
     // relative evaluation due to negamax
     if board.board_color{

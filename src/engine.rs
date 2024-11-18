@@ -427,7 +427,6 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u8) -> M
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
     return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, time_alloc);
-    // return get_best_move_negamax(&game_chess_board.board, &mut game_chess_board.game_tree, depth, -INF, INF);
 }
 
 // heavily inspired by pleco engine... again
@@ -463,8 +462,8 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
         else{
             // move was null
             if mvel.mv != 0{
-                alpha = mvel.score - 100;
-                beta = mvel.score + 100;
+                alpha = mvel.score - 150;
+                beta = mvel.score + 150;
                 unsafe{
                     println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv));
                     node_counter = 0;

@@ -11,6 +11,8 @@ Features:
 - alpha beta
 - negamax
 - iterative deepening
+- endgame weights
+- endgame playstyle 
 
 Goals:
 - transposition table

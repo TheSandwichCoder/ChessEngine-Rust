@@ -4,6 +4,19 @@
 // castle: Queen, King 
 // enpassant : counting starts from  0 0 0 1
 
+// 0 - pawn
+// 1 - bishop
+// 2 - knight
+// 3 - rook
+// 4 - queen
+// 5 - king
+// 6 - pawn
+// 7 - bishop
+// 8 - knight
+// 9 - rook
+// 10 - queen
+// 11 - king
+
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::zobrist_hash::*;
