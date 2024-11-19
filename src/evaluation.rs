@@ -219,10 +219,18 @@ pub fn reverse_piece_square_index(index: usize) -> usize{
 
 // 1 when highest, 0 at lowest
 pub fn get_endgame_weight(board: &ChessBoard) -> f32{
-    let num_pieces = board.all_piece_bitboard.count_ones();
+    // let num_pieces = board.all_piece_bitboard.count_ones();
 
-    // engame weight func - [(-n+40)/40]^2
-    let endgame_weight : f32 = (40-num_pieces) as f32 / 40.0;
+    let pawn_piece_bitboard = board.piece_bitboards[0] | board.piece_bitboards[6];
+
+    // all pieces except pawns
+    let important_piece_bitboard = board.all_piece_bitboard ^ pawn_piece_bitboard;
+
+    // pawns are half counted as the rest of the pieces
+    let num_pieces: f32 = pawn_piece_bitboard.count_ones() as f32 * 0.5 + important_piece_bitboard.count_ones() as f32;
+
+    // engame weight func - [(-n+24)/24]^2
+    let endgame_weight : f32 = (24.0-num_pieces) / 24.0;
 
     return endgame_weight * endgame_weight;
 }
@@ -375,6 +383,27 @@ pub fn get_attack_square_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     let mut self_attack_bitboard : u64 = get_board_attack_mask(board, board.board_color);
     let mut score : i16 = 0;
 
+    let inv_endgame : f32 = 1.0 - endgame_weight;
+
+    // king safety check
+    let self_king_square: usize;
+    let opp_king_square: usize;
+
+    if board.board_color{
+        self_king_square = board.piece_bitboards[5].trailing_zeros() as usize;
+        opp_king_square = board.piece_bitboards[11].trailing_zeros() as usize;
+    }
+    else{
+        self_king_square = board.piece_bitboards[11].trailing_zeros() as usize;
+        opp_king_square = board.piece_bitboards[5].trailing_zeros() as usize;
+    }
+
+    // penalise if king is open
+    if endgame_weight < 0.3{
+        score -= ((KING_MOVE_MASK[self_king_square] & opp_attack_bitboard).count_ones() as f32 * 5.0 * inv_endgame) as i16;
+        score += ((KING_MOVE_MASK[opp_king_square] & self_attack_bitboard).count_ones() as f32 * 5.0 * inv_endgame) as i16;
+    }
+    
     score -= (opp_attack_bitboard.count_ones() * 2) as i16;
     score += (self_attack_bitboard.count_ones() * 2) as i16;
 

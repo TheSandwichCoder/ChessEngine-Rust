@@ -21,6 +21,7 @@ Goals:
 - quiscience search
 - move priority search
 - pawn promotion
+- doubled pawn penalty
 - passed pawn score
 - accompanied pawn bias
 - king safety bias
