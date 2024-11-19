@@ -462,8 +462,8 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
         else{
             // move was null
             if mvel.mv != 0{
-                alpha = mvel.score - 150;
-                beta = mvel.score + 150;
+                alpha = mvel.score - 250;
+                beta = mvel.score + 250;
                 unsafe{
                     println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv));
                     node_counter = 0;
