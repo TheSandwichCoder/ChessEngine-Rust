@@ -134,7 +134,80 @@ const BISHOP_KNIGHT_ENDGAME_BIAS_TABLE: [i16; 64] = [
      150,  100,  90,  70, -70, -90, -100, -150,
 ];
 
+// HIGHLY HIGHLY INSPIRED (copied) from Sebastian Lagues tables
+const PAWN_PIECE_SQUARE_TABLE : [i16; 64] = [
+    0,   0,   0,   0,   0,   0,   0,   0,
+   50,  50,  50,  50,  50,  50,  50,  50,
+   10,  10,  20,  30,  30,  20,  10,  10,
+    5,   5,  10,  25,  25,  10,   5,   5,
+    0,   0,   0,  20,  20,   0,   0,   0,
+    5,  -5, -10,   0,   0, -10,  -5,   5,
+    5,  10,  10, -20, -20,  10,  10,   5,
+    0,   0,   0,   0,   0,   0,   0,   0
+];
 
+const PAWN_PIECE_SQUARE_ENDGAME_TABLE : [i16; 64] = [
+    0,   0,   0,   0,   0,   0,   0,   0,
+   80,  80,  80,  80,  80,  80,  80,  80,
+   50,  50,  50,  50,  50,  50,  50,  50,
+   30,  30,  30,  30,  30,  30,  30,  30,
+   20,  20,  20,  20,  20,  20,  20,  20,
+   10,  10,  10,  10,  10,  10,  10,  10,
+   10,  10,  10,  10,  10,  10,  10,  10,
+    0,   0,   0,   0,   0,   0,   0,   0
+];
+
+const KNIGHT_PIECE_SQUARE_TABLE : [i16; 64] = [
+    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,  0,  0,  0,  0,-20,-40,
+    -30,  0, 10, 15, 15, 10,  0,-30,
+    -30,  5, 15, 20, 20, 15,  5,-30,
+    -30,  0, 15, 20, 20, 15,  0,-30,
+    -30,  5, 10, 15, 15, 10,  5,-30,
+    -40,-20,  0,  5,  5,  0,-20,-40,
+    -50,-40,-30,-30,-30,-30,-40,-50,
+];
+
+const BISHOP_PIECE_SQUARE_TABLE : [i16; 64] = [
+    -20,-10,-10,-10,-10,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5, 10, 10,  5,  0,-10,
+    -10,  5,  5, 10, 10,  5,  5,-10,
+    -10,  0, 10, 10, 10, 10,  0,-10,
+    -10, 10, 10, 10, 10, 10, 10,-10,
+    -10,  5,  0,  0,  0,  0,  5,-10,
+    -20,-10,-10,-10,-10,-10,-10,-20,
+];
+
+const ROOK_PIECE_SQUARE_TABLE: [i16; 64] = [
+    0,  0,  0,  0,  0,  0,  0,  0,
+    5, 10, 10, 10, 10, 10, 10,  5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    0,  0,  0,  5,  5,  0,  0,  0
+];
+const QUEEN_PIECE_SQUARE_TABLE : [i16; 64] =  [
+    -20,-10,-10, -5, -5,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5,  5,  5,  5,  0,-10,
+    -5,   0,  5,  5,  5,  5,  0, -5,
+    0,    0,  5,  5,  5,  5,  0, -5,
+    -10,  5,  5,  5,  5,  5,  0,-10,
+    -10,  0,  5,  0,  0,  0,  0,-10,
+    -20,-10,-10, -5, -5,-10,-10,-20
+];
+
+const IMPORTANT_ATTACK_SQUARES_MASK: u64 = 0x3C7E7E3C0000;
+
+const PIECE_SQUARE_TABLE_REF : [&[i16; 64]; 4] = [
+    &BISHOP_PIECE_SQUARE_TABLE,
+    &KNIGHT_PIECE_SQUARE_TABLE,
+    &ROOK_PIECE_SQUARE_TABLE,
+    &QUEEN_PIECE_SQUARE_TABLE
+];
 
 pub fn reverse_piece_square_index(index: usize) -> usize{
     let y = index / 8;
@@ -227,6 +300,98 @@ pub fn get_board_piece_value_score(board: &ChessBoard, endgame_weight: f32) -> i
     return score;
 }
 
+// this only considers non pawns and kings (since they have endgame tables)
+pub fn get_board_piece_square_score(board: &ChessBoard) -> i16{
+    let mut score: i16 = 0;
+    // bishop, knight, rook, queen
+    for piece_type in 1..5{
+        let mut temp_bitboard: u64 = board.piece_bitboards[piece_type];
+        let piece_square_table: &[i16; 64] = PIECE_SQUARE_TABLE_REF[piece_type - 1];
+
+        while temp_bitboard != 0{
+            let piece_square: usize = temp_bitboard.trailing_zeros() as usize;
+
+            score += piece_square_table[piece_square];
+
+            temp_bitboard ^= 1 << piece_square;
+        }
+    }
+
+    for piece_type in 7..11{
+        let mut temp_bitboard: u64 = board.piece_bitboards[piece_type];
+        let piece_square_table: &[i16; 64] = PIECE_SQUARE_TABLE_REF[piece_type - 7];
+
+        while temp_bitboard != 0{
+            let piece_square: usize = temp_bitboard.trailing_zeros() as usize;
+
+            score -= piece_square_table[reverse_piece_square_index(piece_square)];
+
+            temp_bitboard ^= 1 << piece_square;
+        }
+    }
+
+    return score;
+}
+
+pub fn get_pawn_piece_square_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+    let mut score: i16 = 0;
+
+    let mut white_pawn_bitboard : u64 = board.piece_bitboards[0];
+    let mut black_pawn_bitboard : u64 = board.piece_bitboards[6];
+
+    while white_pawn_bitboard != 0{
+        let pawn_square: usize = white_pawn_bitboard.trailing_zeros() as usize;
+        
+        if endgame_weight > 0.3{
+            score += lerp_int(PAWN_PIECE_SQUARE_TABLE[pawn_square], PAWN_PIECE_SQUARE_ENDGAME_TABLE[pawn_square], endgame_weight);
+        }
+        else{
+            score += PAWN_PIECE_SQUARE_TABLE[pawn_square];
+        }
+
+        white_pawn_bitboard ^= 1 << pawn_square;
+    }
+
+    while black_pawn_bitboard != 0{
+        let pawn_square: usize = black_pawn_bitboard.trailing_zeros() as usize;
+
+        let reversed_pawn_square = reverse_piece_square_index(pawn_square);
+        
+        if endgame_weight > 0.3{
+            score -= lerp_int(PAWN_PIECE_SQUARE_TABLE[reversed_pawn_square], PAWN_PIECE_SQUARE_ENDGAME_TABLE[reversed_pawn_square], endgame_weight);
+        }
+        else{
+            score -= PAWN_PIECE_SQUARE_TABLE[reversed_pawn_square];
+        }
+
+        black_pawn_bitboard ^= 1 << pawn_square;
+    }
+
+    return score;
+}
+
+pub fn get_attack_square_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+    let mut opp_attack_bitboard : u64 = board.attack_mask;
+    let mut self_attack_bitboard : u64 = get_board_attack_mask(board, board.board_color);
+    let mut score : i16 = 0;
+
+    score -= (opp_attack_bitboard.count_ones() * 2) as i16;
+    score += (self_attack_bitboard.count_ones() * 2) as i16;
+
+    opp_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
+    self_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
+
+    score -= (opp_attack_bitboard.count_ones() * 10) as i16;
+    score += (self_attack_bitboard.count_ones() * 10) as i16;
+
+    if board.board_color{
+        return score;
+    }
+    else{
+        return -score;
+    }
+}
+
 pub fn bishop_knight_endgame_bias(board: &ChessBoard, board_color: bool, endgame_weight: f32) -> i16{
     
     let bishop_bitboard: u64;
@@ -275,6 +440,12 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     let endgame_weight : f32 = get_endgame_weight(board); 
 
     score += get_board_piece_value_score(board, endgame_weight);
+    score += get_board_piece_square_score(board);
+
+    // prioritises pawn near end nearer to endgame
+    score += get_pawn_piece_square_score(board, endgame_weight);
+
+    score += get_attack_square_score(board, endgame_weight);
 
     // prioritises king near center
     score += king_engame_square_weight(board, endgame_weight);

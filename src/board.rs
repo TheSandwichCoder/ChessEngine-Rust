@@ -731,14 +731,10 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
     update_board(chess_board);
 }
 
-// update board stuff
+pub fn get_board_attack_mask(chess_board: &ChessBoard, color: bool) -> u64{
+    let mut attack_mask : u64 = 0;
 
-pub fn update_board_attack_mask(chess_board: &mut ChessBoard){
-    // reset it 
-    chess_board.attack_mask = 0;
-
-    // if white, we should check black attacks
-    if !chess_board.board_color{
+    if color{
         for piece_type in 0..6{
             let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
 
@@ -746,22 +742,22 @@ pub fn update_board_attack_mask(chess_board: &mut ChessBoard){
                 let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
 
                 if piece_type == 0{
-                    chess_board.attack_mask |= WHITE_PAWN_ATTACK_MASK[square];
+                    attack_mask |= WHITE_PAWN_ATTACK_MASK[square];
                 }
                 else if piece_type == 1{
-                    chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+                    attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
                 }
                 else if piece_type == 2{
-                    chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+                    attack_mask |= KNIGHT_MOVE_MASK[square];
                 }
                 else if piece_type == 3{
-                    chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+                    attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
                 }
                 else if piece_type == 4{
-                    chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+                    attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
                 }
                 else if piece_type == 5{
-                    chess_board.attack_mask |= KING_MOVE_MASK[square];
+                    attack_mask |= KING_MOVE_MASK[square];
                 }
 
                 temp_piece_bitboard ^= 1<<square;
@@ -776,28 +772,98 @@ pub fn update_board_attack_mask(chess_board: &mut ChessBoard){
                 let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
 
                 if piece_type == 6{
-                    chess_board.attack_mask |= BLACK_PAWN_ATTACK_MASK[square];
+                    attack_mask |= BLACK_PAWN_ATTACK_MASK[square];
                 }
                 else if piece_type == 7{
-                    chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+                    attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
                 }
                 else if piece_type == 8{
-                    chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+                    attack_mask |= KNIGHT_MOVE_MASK[square];
                 }
                 else if piece_type == 9{
-                    chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+                    attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
                 }
                 else if piece_type == 10{
-                    chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+                    attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
                 }
                 else if piece_type == 11{
-                    chess_board.attack_mask |= KING_MOVE_MASK[square];
+                    attack_mask |= KING_MOVE_MASK[square];
                 }
 
                 temp_piece_bitboard ^= 1<<square;
             }
         }
     }
+
+    return attack_mask;
+}
+
+// update board stuff
+pub fn update_board_attack_mask(chess_board: &mut ChessBoard){
+    // reset it 
+    chess_board.attack_mask = get_board_attack_mask(chess_board, !chess_board.board_color);
+
+    // // if white, we should check black attacks
+    // if !chess_board.board_color{
+    //     for piece_type in 0..6{
+    //         let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+
+    //         while temp_piece_bitboard != 0{
+    //             let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
+
+    //             if piece_type == 0{
+    //                 chess_board.attack_mask |= WHITE_PAWN_ATTACK_MASK[square];
+    //             }
+    //             else if piece_type == 1{
+    //                 chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+    //             }
+    //             else if piece_type == 2{
+    //                 chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+    //             }
+    //             else if piece_type == 3{
+    //                 chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+    //             }
+    //             else if piece_type == 4{
+    //                 chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+    //             }
+    //             else if piece_type == 5{
+    //                 chess_board.attack_mask |= KING_MOVE_MASK[square];
+    //             }
+
+    //             temp_piece_bitboard ^= 1<<square;
+    //         }
+    //     }    
+    // }
+    // else{
+    //     for piece_type in 6..12{
+    //         let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+
+    //         while temp_piece_bitboard != 0{
+    //             let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
+
+    //             if piece_type == 6{
+    //                 chess_board.attack_mask |= BLACK_PAWN_ATTACK_MASK[square];
+    //             }
+    //             else if piece_type == 7{
+    //                 chess_board.attack_mask |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+    //             }
+    //             else if piece_type == 8{
+    //                 chess_board.attack_mask |= KNIGHT_MOVE_MASK[square];
+    //             }
+    //             else if piece_type == 9{
+    //                 chess_board.attack_mask |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+    //             }
+    //             else if piece_type == 10{
+    //                 chess_board.attack_mask |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+    //             }
+    //             else if piece_type == 11{
+    //                 chess_board.attack_mask |= KING_MOVE_MASK[square];
+    //             }
+
+    //             temp_piece_bitboard ^= 1<<square;
+    //         }
+    //     }
+    // }
 }
 
 pub fn update_board_check_mask(chess_board: &mut ChessBoard){

@@ -13,11 +13,15 @@ Features:
 - iterative deepening
 - endgame weights
 - endgame playstyle 
+- piece square tables
+- attack square score
 
 Goals:
 - transposition table
 - quiscience search
 - move priority search
-- endgame
 - pawn promotion
+- passed pawn score
+- accompanied pawn bias
+- king safety bias
 - castling bias
