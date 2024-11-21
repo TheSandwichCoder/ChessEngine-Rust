@@ -40,7 +40,7 @@ pub const BLACK_LEFT_ROOK_DEFAULT: u64 = 0x1;
 pub const BLACK_RIGHT_ROOK_DEFAULT: u64 = 0x80;
 
 
-const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8); 6] = [
+const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8, u64); 6] = [
     add_pawn_moves, 
     add_bishop_moves, 
     add_knight_moves,
@@ -1051,6 +1051,36 @@ pub fn update_board(chess_board: &mut ChessBoard){
     update_board_pin_mask(chess_board);
 }
 
+pub fn get_quiet_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
+    let piece_color_offset: usize;
+    let opp_all_piece_bitboard: u64;
+
+    if chess_board.board_color{
+        piece_color_offset = 0;
+        opp_all_piece_bitboard = chess_board.black_piece_bitboard;
+    }
+    else{
+        piece_color_offset = 6;
+        opp_all_piece_bitboard = chess_board.white_piece_bitboard;
+    }
+
+    // standard movement
+
+    if !chess_board.is_double_check{
+        for piece_type in 0..6{
+            let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type + piece_color_offset];
+
+            while temp_piece_bitboard != 0{
+                let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
+
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square, opp_all_piece_bitboard);
+
+                temp_piece_bitboard ^= 1<<square;
+            }
+        }
+    }
+}
+
 pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
     // white to move
 
@@ -1072,7 +1102,7 @@ pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square, !0);
 
                 temp_piece_bitboard ^= 1<<square;
             }
@@ -1083,7 +1113,7 @@ pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
 
         let king_square:u8 = chess_board.piece_bitboards[5+piece_color_offset].trailing_zeros() as u8;
 
-        MOVE_FUNCTIONS_ARRAY[5](chess_board, move_vec, king_square);
+        MOVE_FUNCTIONS_ARRAY[5](chess_board, move_vec, king_square, !0);
 
         // can break early
         return;

@@ -703,6 +703,7 @@ pub fn add_rook_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>,
     square: u8,
+    restriction_mask: u64
 ){
     let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
 
@@ -717,7 +718,7 @@ pub fn add_rook_moves(
         friendly_blockers = chess_board.black_piece_bitboard;
     }
 
-    let mut rook_move_bitboard: u64 = get_rook_move_bitboard(square as usize, blockers) & !friendly_blockers;
+    let mut rook_move_bitboard: u64 = get_rook_move_bitboard(square as usize, blockers) & !friendly_blockers & restriction_mask;
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
@@ -742,6 +743,7 @@ pub fn add_bishop_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>,
     square: u8,
+    restriction_mask: u64,
 ){
     let blockers: u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
 
@@ -756,7 +758,7 @@ pub fn add_bishop_moves(
         king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
     }
 
-    let mut bishop_move_bitboard: u64 = get_bishop_move_bitboard(square as usize, blockers) & !friendly_blockers;
+    let mut bishop_move_bitboard: u64 = get_bishop_move_bitboard(square as usize, blockers) & !friendly_blockers & restriction_mask;
 
 
     // pin check
@@ -781,6 +783,7 @@ pub fn add_queen_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
     square: u8, 
+    restriction_mask: u64,
 ){
     let blockers : u64 = chess_board.white_piece_bitboard | chess_board.black_piece_bitboard;
     
@@ -797,7 +800,7 @@ pub fn add_queen_moves(
         king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
     } 
 
-    let mut queen_move_bitboard: u64 = (get_bishop_move_bitboard(square as usize, blockers) | get_rook_move_bitboard(square as usize, blockers)) & !friendly_blockers;
+    let mut queen_move_bitboard: u64 = (get_bishop_move_bitboard(square as usize, blockers) | get_rook_move_bitboard(square as usize, blockers)) & !friendly_blockers & restriction_mask;
 
     // pin check
     if (chess_board.pin_mask & 1<<square)!= 0{
@@ -824,6 +827,7 @@ pub fn add_knight_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
     square: u8, 
+    restriction_mask: u64
 ){
     // the knight is not pinned
     if (chess_board.pin_mask & 1<<square) == 0{
@@ -844,6 +848,8 @@ pub fn add_knight_moves(
             move_bitboard &= chess_board.check_mask;
         }
 
+        move_bitboard &= restriction_mask;
+
         add_moves(move_vector, square, move_bitboard);
     }
 }
@@ -852,6 +858,7 @@ pub fn add_king_moves(
     chess_board: &ChessBoard,
     move_vector: &mut Vec<u16>, 
     square: u8, 
+    restriction_mask: u64
 ){
     let friendly_blockers: u64;
     if chess_board.board_color{
@@ -861,8 +868,8 @@ pub fn add_king_moves(
         friendly_blockers = chess_board.black_piece_bitboard;
     }
 
-    let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & !chess_board.attack_mask & !friendly_blockers;
-    
+    let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & !chess_board.attack_mask & !friendly_blockers & restriction_mask;
+
     add_moves(move_vector, square, move_bitboard);
 }
 
@@ -943,22 +950,14 @@ pub fn add_pawn_double_move(
 
 pub fn add_pawn_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
-    square: u8, 
+    move_vector: &mut Vec<u16>,
+    square: u8,
+    restriction_mask: u64,
 ){
     let mut move_bitboard: u64 = 0;
 
     // white
     if chess_board.board_color{
-
-        // // pawn double move row
-        // if square >= 48 && square <= 55{
-        //     // nothing blocking it from moving double
-        //     if 1 << (square - 16) & chess_board.all_piece_bitboard == 0{
-        //         move_bitboard |= 1 << (square - 16);
-        //     }
-        // }
-
         // nothing blocking it from moving forward
         if 1 << (square - 8) & chess_board.all_piece_bitboard == 0{
             // we temp ignore promotions since we are limited by the bitboard
@@ -979,14 +978,6 @@ pub fn add_pawn_moves(
 
     // black
     else{
-        // // pawn double move row
-        // if square >= 8 && square <= 15{
-        //     // nothing blocking it from moving double
-        //     if 1 << (square + 16) & chess_board.all_piece_bitboard == 0{
-        //         move_bitboard |= 1 << (square+ 16);
-        //     }
-        // }
-
         // nothing blocking it from moving forward
         if 1 << (square + 8) & chess_board.all_piece_bitboard == 0{
             move_bitboard |= 1 << (square + 8);
@@ -1002,6 +993,8 @@ pub fn add_pawn_moves(
             move_bitboard |= 1 << (square + 9);
         }
     }
+
+    move_bitboard &= restriction_mask;
 
     // pin masking
     if 1 << square & chess_board.pin_mask != 0{

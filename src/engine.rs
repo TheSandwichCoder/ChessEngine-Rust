@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::ops::Neg;
 use std::fs;
 
@@ -12,6 +12,7 @@ use crate::board::*;
 use crate::evaluation::*;
 use crate::game_board::*;
 use crate::zobrist_hash::*;
+use crate::transposition_table::TranspositionTable;
 use crate::timer::Timer;
 
 
@@ -36,6 +37,52 @@ impl Neg for MoveScorePair {
             score: -self.score,
         }
     }
+}
+
+pub struct MoveWeightPair{
+    pub mv: u16,
+    pub weight: u8,
+}
+
+impl MoveWeightPair {
+    fn new(mv: u16, weight: u8) -> MoveWeightPair {
+        MoveWeightPair { mv, weight }
+    }
+}
+
+fn get_move_weight(mv: u16, board: &ChessBoard) -> u8{
+    let to_square: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
+    let mut weight : u8 = 10;
+
+    // is a piece capture
+    if board.all_piece_bitboard & 1<<to_square != 0{
+        weight += 1;
+
+        let from_square: usize = (mv & MOVE_DECODER_MASK) as usize;
+
+        let piece_captured: u8 = board.piece_array[to_square] % 6;
+        let piece_moved: u8 = board.piece_array[from_square] % 6;
+
+        if (piece_captured) > (piece_moved){
+            weight += 1;
+        }
+
+        else{
+            // depending on how large the difference is
+            weight -= (piece_moved-piece_captured);
+        }
+    }
+
+    return weight;
+}
+
+fn sort_move_vec(move_vec_sorted: &mut Vec<MoveWeightPair>, move_vec: &Vec<u16>, chess_board: &ChessBoard){
+    for mv in move_vec{
+        move_vec_sorted.push(MoveWeightPair::new(*mv, get_move_weight(*mv, chess_board)));
+    }
+
+    // descending order since we want best weights first
+    move_vec_sorted.sort_by(|a, b| b.weight.cmp(&a.weight));
 }
 
 // Encoding Scheme (not UCI for reasons)
@@ -415,6 +462,52 @@ pub fn debug(game_board: &mut GameChessBoard){
 
             println!("evaluation: {} score: {}", get_move_string(best_move.mv), best_move.score);
         }
+
+        else if input_string == "bench -best"{
+            position_bench();
+        }
+    }
+}
+
+pub fn position_bench(){
+    let mut fen_pos_array: Vec<String> = vec![
+        "r2qkb1r/pb3ppp/1pn1pn2/2p5/2pP4/PP3NP1/4PPBP/RNBQ1RK1 w kq - 0 9".to_string(),
+        "r1b2rk1/1pqp1ppp/p3pn2/P7/1b2P3/1NNPBP2/1P4PP/R2QK2R w KQ - 1 13".to_string(),
+        "r2q1rk1/pp2bppp/2n2n2/3pN3/3P4/7P/PP2NPP1/R1BQ1RK1 w - - 1 13".to_string(),
+        "r1b1k2r/p1qp1ppp/2p1pn2/2b5/4P3/6P1/PPP2PBP/RNBQ1RK1 w kq - 0 9".to_string(),
+        "1r2r1k1/pbqn1pp1/1ppbpn1p/3p4/2PP4/1PN1PNPP/PBQ2PBK/R2R4 w - - 1 15".to_string(),
+        "rnb2rk1/pp3ppp/2p1pq2/8/1bpP4/2N1PN2/PP2BPPP/R2QK2R w KQ - 0 9".to_string(),
+        "rn2k2r/pbp2ppp/1p2p2q/4P1n1/2pP4/2PB1PP1/PB1Q3P/R3K1NR w KQkq - 0 13".to_string(),
+        "rnbqr3/bp3ppk/p1pp1n1p/4p3/1PP5/P1NP1NP1/3BPPBP/R1Q2RK1 w - - 3 12".to_string(),
+        "r2q1rk1/pb1nbppp/1p2pn2/8/3p4/2NBPN2/PP1BQPPP/2R1R1K1 w - - 0 13".to_string(),
+        "r1bq1rk1/pp1nbppp/5n2/2Ppp3/1P3B2/P1N1P2P/5PP1/R2QKBNR w KQ - 0 11".to_string(),
+        "r1bqr1k1/ppp2pp1/1b1p1n1p/4p3/1PBnP3/P1NP1N1P/2P2PP1/R1BQR1K1 w - - 3 11".to_string(),
+        "r2qkb1r/p2nnp2/bp2p1p1/2ppP2p/3P1P1P/2P2NP1/PP4B1/RNBQR2K w kq - 3 13".to_string(),
+        "r1bq1rk1/pp1nbpp1/2n1p2p/3p4/3P3B/3BPN2/PP1N1PPP/R2Q1RK1 w - - 5 11".to_string(),
+        "r2q1rk1/1p1nbppp/p1p5/2Pp1b2/1P1P1B2/2R2N1P/P3BPP1/3Q1RK1 w - - 1 16".to_string(),
+        "r3k1nr/pp3ppp/n3b3/1N2p3/2p1P3/8/PP1K1PPP/R2N1B1R w kq - 1 11".to_string(),
+        "r2q1rk1/1bpn1pbp/pp1ppnp1/8/3PPP2/2N2N2/PPP1BBPP/R2QR1K1 w - - 0 11".to_string(),
+        "2kr1b1r/pbq2pp1/1pn1pn2/2p4p/4PPP1/2P3NP/PP1NQ1B1/R1B2RK1 w - - 0 15".to_string(),
+        "r1b1r1k1/ppp1qppp/4p1n1/7n/2BP4/2N2NQ1/P1P2PPP/1R2R1K1 w - - 0 17".to_string(),
+        "rn1k1b1r/pp4pp/4B3/2pP4/Q1P5/N4b1P/Pq2p1P1/R3R1K1 w - - 0 17".to_string(),
+        "rn2kb1r/pp1qpppp/6b1/3pB3/2BP4/5PN1/PPP3PP/R2QK2R w KQkq - 0 13".to_string(),
+        "r1b1k2r/2qn1ppp/2p5/p1b1pP2/1pN1P1n1/3B1N2/PPPBQ2P/R3K2R w KQkq - 0 15".to_string(),
+    ];  
+
+    for fen_pos in fen_pos_array{
+        let mut game_board : GameChessBoard = fen_to_GameChessBoard(&fen_pos);
+        
+        unsafe{node_counter = 0;}
+
+        let t_start = Instant::now();
+        
+        get_best_move_negamax(&game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 3, -INF, INF, &Timer::new(Duration::from_secs(10)));
+
+        let time_taken = t_start.elapsed().as_millis();
+
+        unsafe{
+            println!("test: {} took: {}ms nds:{} nds/s: {}", fen_pos, time_taken, node_counter, node_counter as u128 /time_taken * 1000);
+        }
     }
 }
 
@@ -426,11 +519,11 @@ static mut CURR_SEARCH_DEPTH : u8 = 0;
 pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u16) -> MoveScorePair{
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
-    return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, time_alloc);
+    return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
 }
 
 // heavily inspired by pleco engine... again
-pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, time_alloc: u16) -> MoveScorePair{
+pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u16) -> MoveScorePair{
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
@@ -441,7 +534,7 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
     unsafe{CURR_SEARCH_DEPTH = depth;}
 
-    let mut curr_depth = 2;
+    let mut curr_depth = 1;
 
     while curr_depth < MAX_SEARCH_DEPTH{
         if timer.time_out(){
@@ -449,7 +542,7 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
             break;
         }
 
-        let mvel : MoveScorePair = get_best_move_negamax(chess_board, game_tree, curr_depth, alpha, beta, &timer);
+        let mvel : MoveScorePair = get_best_move_negamax(chess_board, game_tree, transposition_table, curr_depth, alpha, beta, &timer);
 
         if mvel.score >= beta{
             println!("RESTART SEARCH - BETA");
@@ -464,12 +557,11 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
             if mvel.mv != 0{
                 alpha = mvel.score - 250;
                 beta = mvel.score + 250;
+                best_mvel = mvel;
                 unsafe{
                     println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv));
                     node_counter = 0;
                 }
-                
-                best_mvel = mvel;
             }
             
             curr_depth += 1;
@@ -480,21 +572,21 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
     return best_mvel;
 }
 
-pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if depth == 0{
-        unsafe{node_counter += 1;}
-
-        return MoveScorePair::new(0, get_board_score(chess_board));
+        // unsafe{node_counter += 1;}
+        // return MoveScorePair::new(0, get_board_score(chess_board));
+        return quiescence_search(chess_board, transposition_table, alpha, beta);
     }
 
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
 
-    let mut move_vec: Vec<u16> = Vec::new();
+    let mut move_vec_unsorted: Vec<u16> = Vec::new();
 
-    get_moves(chess_board, &mut move_vec);
+    get_moves(chess_board, &mut move_vec_unsorted);
 
     // no legal moves
-    if move_vec.len() == 0{
+    if move_vec_unsorted.len() == 0{
         // stalemate
         if chess_board.check_mask == 0{
             best_mvel_pair.score = 0;
@@ -509,9 +601,14 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         return best_mvel_pair
     }
 
-    for mv in move_vec{
+    let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
+    sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
+
+    for mv_weight_pair in move_vec_sorted{
+        let mv = mv_weight_pair.mv;
+
         if timer.time_out(){
-            return MoveScorePair::new(0, -INF);
+            return best_mvel_pair;
         }
         let mut sub_board: ChessBoard = chess_board.clone();
         let mvel_pair: MoveScorePair;
@@ -526,14 +623,7 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, depth - 1, -beta, -alpha, timer);
-
-            // unsafe{
-            //     if depth == CURR_SEARCH_DEPTH{
-            //         println!("move searched: {} {} {}", get_move_string(mv), mvel_pair.score, node_counter);
-            //         node_counter = 0;
-            //     }
-            // }
+            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);
         }
 
         if mvel_pair.score >= beta{
@@ -556,3 +646,53 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
     return best_mvel_pair;
 }
 
+pub fn quiescence_search(chess_board: &ChessBoard, transposition_table: &mut TranspositionTable, mut alpha: i16, mut beta: i16) -> MoveScorePair{
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
+
+    let mut move_vec_unsorted: Vec<u16> = Vec::new();
+
+    get_quiet_moves(chess_board, &mut move_vec_unsorted); 
+
+    if move_vec_unsorted.len() == 0{
+        unsafe{node_counter += 1;}
+        return MoveScorePair::new(0, get_board_score(chess_board));
+    }
+
+    let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
+    sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
+    
+    for mv_weight_pair in move_vec_sorted{
+        let mv = mv_weight_pair.mv;
+
+        let mut sub_board: ChessBoard = chess_board.clone();
+        let mvel_pair: MoveScorePair;
+
+        make_move(&mut sub_board, mv);
+        
+        if transposition_table.table.contains_key(&sub_board.zobrist_hash){
+            mvel_pair = MoveScorePair::new(mv, *transposition_table.table.get(&sub_board.zobrist_hash).unwrap());
+        }
+        else{
+            mvel_pair = -quiescence_search(&sub_board, transposition_table, -beta, -alpha);
+            transposition_table.table.insert(
+                sub_board.zobrist_hash,
+                mvel_pair.score,
+            );
+        }
+        
+        if mvel_pair.score >= beta{
+            return mvel_pair;
+        }
+
+        if mvel_pair.score > best_mvel_pair.score{
+            best_mvel_pair.score = mvel_pair.score;
+            best_mvel_pair.mv = mv;
+
+            if mvel_pair.score > alpha{
+                alpha = mvel_pair.score;
+            }
+        }
+    }
+
+    return best_mvel_pair;
+}

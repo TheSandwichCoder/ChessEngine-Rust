@@ -1,4 +1,5 @@
 use crate::board::*;
+use crate::transposition_table::TranspositionTable;
 use std::collections::HashMap;
 
 // a game board is used to hold the transposition table and move tree
@@ -8,6 +9,7 @@ use std::collections::HashMap;
 pub struct GameChessBoard{
     pub board: ChessBoard,
     pub game_tree: HashMap<u64, u8>,
+    pub transposition_table: TranspositionTable,
     pub move_limit: u16,
 }
 
@@ -16,6 +18,7 @@ impl Clone for GameChessBoard {
         let mut game_board = GameChessBoard{
             board: self.board.clone(),
             game_tree: self.game_tree.clone(),
+            transposition_table: TranspositionTable::new(), // too expensive to clone
             move_limit: 0,
         };
         
@@ -27,6 +30,7 @@ pub fn create_empty_GameChessBoard() -> GameChessBoard{
     return GameChessBoard{
         board: create_empty_board(),
         game_tree: HashMap::new(),
+        transposition_table: TranspositionTable::new(),
         move_limit: 0,
     }
 }
@@ -35,6 +39,7 @@ pub fn fen_to_GameChessBoard(s: &str) -> GameChessBoard{
     let mut game_board = GameChessBoard{
         board: fen_to_board(s),
         game_tree: HashMap::new(),
+        transposition_table: TranspositionTable::new(),
         move_limit: 0,
     };
 
@@ -47,8 +52,10 @@ pub fn fen_to_GameChessBoard(s: &str) -> GameChessBoard{
 pub fn game_make_move(chess_board: &mut GameChessBoard, mv: u16){
     make_move(&mut chess_board.board, mv);
     
-    // do this later you idiot
     add_to_game_tree(&mut chess_board.game_tree, chess_board.board.zobrist_hash);
+
+    // clears the transposition table every move
+    transposition_table = TranspositionTable::new();
 
     chess_board.move_limit += 1;
 }

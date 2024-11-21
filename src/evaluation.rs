@@ -477,7 +477,7 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
         black_pawn_bitboard ^= 1 << pawn_square;
     }
 
-    return score;
+    return (score as f32 * endgame_weight) as i16;
     // return (score as f32 * endgame_weight) as i16;
 }
 
@@ -577,8 +577,8 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     // prioritises pawn near end nearer to endgame
     score += get_pawn_piece_square_score(board, endgame_weight);
 
-    score += doubled_pawn_score(board);
-    score += pawn_surrounding_score(board, endgame_weight);
+    // score += doubled_pawn_score(board);
+    // score += pawn_surrounding_score(board, endgame_weight);
 
     score += get_attack_square_score(board, endgame_weight);
 

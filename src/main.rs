@@ -15,6 +15,7 @@ use app_pieces::*;
 use game_board::*;
 use zobrist_hash::*;
 use timer::*;
+use transposition_table::*;
 
 mod board;
 mod move_compute;
@@ -24,6 +25,7 @@ mod engine;
 mod evaluation;
 mod game_board;
 mod zobrist_hash;
+mod transposition_table;
 
 mod app_settings;
 mod app_pieces;
@@ -33,43 +35,40 @@ mod timer;
 struct replayText;
 
 fn main() {
-    App::new()
-    .add_plugins((
-        DefaultPlugins
-        .set(ImagePlugin::default_nearest())
-        .set(WindowPlugin {
-            primary_window: Some(Window{
-                title: "Rust Chess".into(),
-                resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
-                resizable:false,
-                enabled_buttons: bevy::window::EnabledButtons {
-                    maximize: false,
-                    ..Default::default()
-                },
-                ..default()
-            }),
-            ..default()
-        })
-        .build(),
-    ))
-    .init_state::<GameState>()
-    .add_plugins(BoardPlugin)
-    .add_systems(Startup, setup)
-    .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
-    .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
+    // App::new()
+    // .add_plugins((
+    //     DefaultPlugins
+    //     .set(ImagePlugin::default_nearest())
+    //     .set(WindowPlugin {
+    //         primary_window: Some(Window{
+    //             title: "Rust Chess".into(),
+    //             resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
+    //             resizable:false,
+    //             enabled_buttons: bevy::window::EnabledButtons {
+    //                 maximize: false,
+    //                 ..Default::default()
+    //             },
+    //             ..default()
+    //         }),
+    //         ..default()
+    //     })
+    //     .build(),
+    // ))
+    // .init_state::<GameState>()
+    // .add_plugins(BoardPlugin)
+    // .add_systems(Startup, setup)
+    // .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
+    // .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
 
-    .add_systems(Update, play_again_inputs)
-    .run();
+    // .add_systems(Update, play_again_inputs)
+    // .run();
 
-    // let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
+    let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
 
-    // debug(&mut chess_board);
+    debug(&mut chess_board);
 }
 
 // fen
-// k7/4p3/8/K2P3r/8/8/8 b - - 0 1
-// 8/8/8/8/1k1p3Q/8/4P1K1 w - - 0 1
-// k1K5/8/3N4/1p6/2p5/8/8 w - - 0 1
 
 
 fn setup(

@@ -15,14 +15,14 @@ Features:
 - endgame playstyle 
 - piece square tables
 - attack square score
+- doubled pawn penalty
+- passed pawn score
+- accompanied pawn bias
 
 Goals:
 - transposition table
 - quiscience search
 - move priority search
 - pawn promotion
-- doubled pawn penalty
-- passed pawn score
-- accompanied pawn bias
 - king safety bias
 - castling bias
