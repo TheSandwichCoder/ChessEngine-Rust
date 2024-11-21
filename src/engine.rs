@@ -41,18 +41,18 @@ impl Neg for MoveScorePair {
 
 pub struct MoveWeightPair{
     pub mv: u16,
-    pub weight: u8,
+    pub weight: i16,
 }
 
 impl MoveWeightPair {
-    fn new(mv: u16, weight: u8) -> MoveWeightPair {
+    fn new(mv: u16, weight: i16) -> MoveWeightPair {
         MoveWeightPair { mv, weight }
     }
 }
 
-fn get_move_weight(mv: u16, board: &ChessBoard) -> u8{
+fn get_move_weight(mv: u16, board: &ChessBoard) -> i16{
     let to_square: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
-    let mut weight : u8 = 10;
+    let mut weight : i16 = 0;
 
     // is a piece capture
     if board.all_piece_bitboard & 1<<to_square != 0{
@@ -69,7 +69,7 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> u8{
 
         else{
             // depending on how large the difference is
-            weight -= (piece_moved-piece_captured);
+            weight -= (piece_moved-piece_captured) as i16;
         }
     }
 
@@ -325,6 +325,11 @@ pub fn debug(game_board: &mut GameChessBoard){
         if input_string == "quit"{
             debug_running = false;  
         }
+
+        else if input_string == "version"{
+            println!("VERSION {}", ENGINE_VERSION);
+        }
+
         else if input_string == "show"{
             print_game_board(&game_board);
         }
@@ -522,6 +527,9 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u16) -> 
     return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
 }
 
+// testing fens:
+// 2Q2nk1/p4p1p/1p2rnp1/3p4/3P3q/BP6/P2N4/2K2R b - - - 
+
 // heavily inspired by pleco engine... again
 pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u16) -> MoveScorePair{
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
@@ -536,32 +544,83 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
     let mut curr_depth = 1;
 
+    let mut move_vec_unsorted: Vec<u16> = Vec::new();
+
+    get_moves(chess_board, &mut move_vec_unsorted);
+
+    let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
+
+    sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
+
     while curr_depth < MAX_SEARCH_DEPTH{
         if timer.time_out(){
-            println!("TIME OUT");
             break;
         }
+        // Search Starts here
+        let mut best_mvel_search_pair : MoveScorePair = MoveScorePair::new(0, alpha);
 
-        let mvel : MoveScorePair = get_best_move_negamax(chess_board, game_tree, transposition_table, curr_depth, alpha, beta, &timer);
+        // for mv_weight_pair in &move_vec_sorted{
+        //     print!("{}:{},", get_move_string(mv_weight_pair.mv), mv_weight_pair.weight);
+        // }
+        // println!("");
 
-        if mvel.score >= beta{
+        for mut mv_weight_pair in &mut move_vec_sorted{
+            let mv = mv_weight_pair.mv;
+
+            
+            let mut sub_board: ChessBoard = chess_board.clone();
+            let mvel_pair: MoveScorePair;
+
+            make_move(&mut sub_board, mv);
+
+            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, curr_depth - 1, -beta, -alpha, &timer);
+            // println!("{} {} a:{}",get_move_string(mv), mvel_pair.score, alpha);
+
+            if timer.time_out(){
+                break;
+            }
+
+            mv_weight_pair.weight = mvel_pair.score;
+
+            if mvel_pair.score > best_mvel_search_pair.score{
+                best_mvel_search_pair.score = mvel_pair.score;
+                best_mvel_search_pair.mv = mv;
+    
+                if mvel_pair.score > alpha{
+                    alpha = mvel_pair.score;
+                }
+            }
+        }
+        // Move Search Ends here
+
+
+        // doesnt add anything to the move vec and just sorts the changed values
+        sort_move_vec(&mut move_vec_sorted, &Vec::new(), chess_board);
+        transposition_table.table = HashMap::new();
+
+        if best_mvel_search_pair.score > beta{
             println!("RESTART SEARCH - BETA");
             beta = INF;
+            transposition_table.table = HashMap::new();
         }
-        else if mvel.score <= alpha{
+        else if best_mvel_search_pair.score < alpha{
             println!("RESTART SEARCH - ALPHA");
             alpha = -INF;
+            transposition_table.table = HashMap::new();
         }
         else{
             // move was null
-            if mvel.mv != 0{
-                alpha = mvel.score - 250;
-                beta = mvel.score + 250;
-                best_mvel = mvel;
+            if best_mvel_search_pair.mv != 0{
+                // alpha = best_mvel_search_pair.score - 250;
+                // beta = best_mvel_search_pair.score + 250;
+                
+                best_mvel = best_mvel_search_pair;
                 unsafe{
                     println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv));
                     node_counter = 0;
                 }
+                alpha = -INF;
+                beta = INF;
             }
             
             curr_depth += 1;
@@ -572,11 +631,13 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
     return best_mvel;
 }
 
+
+
 pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if depth == 0{
-        // unsafe{node_counter += 1;}
-        // return MoveScorePair::new(0, get_board_score(chess_board));
-        return quiescence_search(chess_board, transposition_table, alpha, beta);
+        unsafe{node_counter += 1;}
+        return MoveScorePair::new(0, get_board_score(chess_board));
+        // return quiescence_search(chess_board, transposition_table, alpha, beta);
     }
 
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
