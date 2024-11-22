@@ -12,7 +12,7 @@ use crate::board::*;
 use crate::evaluation::*;
 use crate::game_board::*;
 use crate::zobrist_hash::*;
-use crate::transposition_table::TranspositionTable;
+use crate::transposition_table::{TranspositionTable, TTEntry};
 use crate::timer::Timer;
 
 
@@ -207,7 +207,7 @@ pub fn chess_battle(){
 
         // should move now
         if move_now{
-            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, BATTLE_THINK_TIME);
+            let mvel_pair : MoveScorePair = get_best_move(&mut game_board, BATTLE_THINK_TIME as u32);
 
             println!("Move: {} {}", get_move_string(mvel_pair.mv), mvel_pair.score);            
 
@@ -305,6 +305,7 @@ pub fn debug_zobrist_hash(board: &ChessBoard, depth:u16){
     } 
 }
 
+// 8/8/2K5/k7/8/8/1Q6/8/ w - - 0 1
 pub fn debug(game_board: &mut GameChessBoard){
     let mut input_string: String = String::new();
 
@@ -357,10 +358,10 @@ pub fn debug(game_board: &mut GameChessBoard){
             input_string = input_string.trim().to_string();
 
             if input_string == "default"{
-                game_board.board = fen_to_board(&DEFAULT_FEN);
+                *game_board = fen_to_GameChessBoard(&DEFAULT_FEN);
             }
             else{
-                game_board.board = fen_to_board(&input_string);
+                *game_board = fen_to_GameChessBoard(&input_string);
             }
         }
 
@@ -459,7 +460,7 @@ pub fn debug(game_board: &mut GameChessBoard){
             .read_line(&mut input_string)
             .expect("Failed to read line");
 
-            let think_time: u16 = input_string.trim().parse().expect("cannot parse string to int");
+            let think_time: u32 = input_string.trim().parse().expect("cannot parse string to int");
 
             // let best_move: MoveScorePair = get_best_move_depth_search(chess_board, depth);
 
@@ -516,12 +517,31 @@ pub fn position_bench(){
     }
 }
 
+pub fn debug_print(s: &str, depth: u8){
+    // Open a file with append option
+    let mut data_file = fs::OpenOptions::new()
+        .append(true)
+        .open("debug.txt")
+        .expect("cannot open file");
+
+    for i in 0..depth{
+        data_file
+        .write(b"\t")
+        .expect("write failed");
+    }
+    
+    // Write to a file
+    data_file
+        .write(format!("{}\n", s).as_bytes())
+        .expect("write failed");
+}
+
 static mut node_counter: u32 = 0;
 const INF: i16 = 32767;
 
 static mut CURR_SEARCH_DEPTH : u8 = 0;
 
-pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u16) -> MoveScorePair{
+pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> MoveScorePair{
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
     return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
@@ -531,7 +551,7 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u16) -> 
 // 2Q2nk1/p4p1p/1p2rnp1/3p4/3P3q/BP6/P2N4/2K2R b - - - 
 
 // heavily inspired by pleco engine... again
-pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u16) -> MoveScorePair{
+pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u32) -> MoveScorePair{
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
@@ -539,8 +559,6 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
     let mut alpha : i16 = -INF;
     let mut beta : i16 = INF;
-
-    unsafe{CURR_SEARCH_DEPTH = depth;}
 
     let mut curr_depth = 1;
 
@@ -552,7 +570,17 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
 
+    // if transposition_table.exceed_size(){
+    //     transposition_table.drain();
+    // }
+    transposition_table.clear();
+
+    
+
     while curr_depth < MAX_SEARCH_DEPTH{
+        
+        debug_print(&format!("NEW ITERATIVE DEEPENING : DEPTH {}", curr_depth), 0);
+        unsafe{CURR_SEARCH_DEPTH = curr_depth;}
         if timer.time_out(){
             break;
         }
@@ -574,7 +602,10 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
             make_move(&mut sub_board, mv);
 
             mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, curr_depth - 1, -beta, -alpha, &timer);
-            // println!("{} {} a:{}",get_move_string(mv), mvel_pair.score, alpha);
+            println!("{} {} a:{}",get_move_string(mv), mvel_pair.score, alpha);
+
+            
+            debug_print(&format!("TOP LEVEL {} s:{} d:{}", get_move_string(mv), mvel_pair.score, depth), 0);
 
             if timer.time_out(){
                 break;
@@ -596,17 +627,14 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
         // doesnt add anything to the move vec and just sorts the changed values
         sort_move_vec(&mut move_vec_sorted, &Vec::new(), chess_board);
-        transposition_table.table = HashMap::new();
 
         if best_mvel_search_pair.score > beta{
             println!("RESTART SEARCH - BETA");
             beta = INF;
-            transposition_table.table = HashMap::new();
         }
         else if best_mvel_search_pair.score < alpha{
             println!("RESTART SEARCH - ALPHA");
             alpha = -INF;
-            transposition_table.table = HashMap::new();
         }
         else{
             // move was null
@@ -628,10 +656,22 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
     
     }
 
+    println!("{}%", transposition_table.capacity() * 100.0);
+
     return best_mvel;
 }
 
+fn discredit_score(score: i16) -> i16{
+    if score > 0{
+        return score - 1;
+    }
+    else if score < 0{
+        return score + 1;
+    }
 
+    return score;
+
+}
 
 pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if depth == 0{
@@ -639,6 +679,11 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         return MoveScorePair::new(0, get_board_score(chess_board));
         // return quiescence_search(chess_board, transposition_table, alpha, beta);
     }
+
+    unsafe{
+        debug_print(&format!("--NEW SEARCH d:{}--", depth), CURR_SEARCH_DEPTH - depth);
+    }
+    
 
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
 
@@ -656,7 +701,10 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         // checkmate
         else{
             // shift the checkmate so closer checkmates are preffered
-            best_mvel_pair.score = -10000 - (depth as i16);
+            unsafe{
+                best_mvel_pair.score = -10000 + ((CURR_SEARCH_DEPTH - depth) as i16);
+            }
+            
         }
 
         return best_mvel_pair
@@ -672,9 +720,13 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
             return best_mvel_pair;
         }
         let mut sub_board: ChessBoard = chess_board.clone();
-        let mvel_pair: MoveScorePair;
+        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0);
 
         make_move(&mut sub_board, mv);
+
+        unsafe{
+            debug_print(&format!("MV START mv{} depth{}", get_move_string(mv), depth), CURR_SEARCH_DEPTH - depth);
+        }
 
         let counter : u8 = add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -684,15 +736,53 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);
+            let mut do_search : bool = true;
+            // if transposition_table.table.contains_key(&sub_board.zobrist_hash){
+            //     let tt_entry: &mut TTEntry = transposition_table.table.get_mut(&sub_board.zobrist_hash).unwrap();
+
+            //     // larger / equal search
+            //     if tt_entry.depth >= depth{
+
+            //         unsafe{
+            //             debug_print(&format!("TT LOOKUP fen{} s:{} d:{}", board_to_fen(&sub_board), tt_entry.score, depth), CURR_SEARCH_DEPTH - depth);
+            //         }
+
+            //         mvel_pair = MoveScorePair::new(mv, tt_entry.score);
+            //         do_search = false;
+            //         tt_entry.visited += 1;
+            //     }
+            // }
+
+            if do_search{
+                mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);                
+
+                // unsafe{
+                //     debug_print(&format!("TT WRITE fen{} s:{} d:{}", board_to_fen(&sub_board), mvel_pair.score, depth), CURR_SEARCH_DEPTH - depth);
+                // }
+
+                transposition_table.add(sub_board.zobrist_hash, discredit_score(mvel_pair.score), depth);
+            }
+        }
+
+        unsafe{
+            debug_print(&format!("MV END mv{} s:{} d:{}", get_move_string(mv), mvel_pair.score, depth), CURR_SEARCH_DEPTH - depth);
         }
 
         if mvel_pair.score >= beta{
+            unsafe{
+                debug_print(&"BETA CUTOFF", CURR_SEARCH_DEPTH - depth);
+            }
+            
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
             return mvel_pair;
         }
 
         if mvel_pair.score > best_mvel_pair.score{
+            unsafe{
+                debug_print(&"NEW BEST", CURR_SEARCH_DEPTH - depth);
+            }
+            
+
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
 
@@ -702,6 +792,10 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         remove_from_game_tree(game_tree, sub_board.zobrist_hash);
+    }
+
+    unsafe{
+        debug_print(&format!("RETURN BEST mv{} s:{} d:{}", get_move_string(best_mvel_pair.mv), best_mvel_pair.score, depth), CURR_SEARCH_DEPTH - depth);
     }
 
     return best_mvel_pair;
@@ -731,14 +825,14 @@ pub fn quiescence_search(chess_board: &ChessBoard, transposition_table: &mut Tra
         make_move(&mut sub_board, mv);
         
         if transposition_table.table.contains_key(&sub_board.zobrist_hash){
-            mvel_pair = MoveScorePair::new(mv, *transposition_table.table.get(&sub_board.zobrist_hash).unwrap());
+            mvel_pair = MoveScorePair::new(mv, transposition_table.table.get(&sub_board.zobrist_hash).unwrap().score);
         }
         else{
             mvel_pair = -quiescence_search(&sub_board, transposition_table, -beta, -alpha);
-            transposition_table.table.insert(
-                sub_board.zobrist_hash,
-                mvel_pair.score,
-            );
+            // transposition_table.table.insert(
+            //     sub_board.zobrist_hash,
+            //     mvel_pair.score,
+            // );
         }
         
         if mvel_pair.score >= beta{

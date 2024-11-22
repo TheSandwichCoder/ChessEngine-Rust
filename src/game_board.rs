@@ -55,7 +55,13 @@ pub fn game_make_move(chess_board: &mut GameChessBoard, mv: u16){
     add_to_game_tree(&mut chess_board.game_tree, chess_board.board.zobrist_hash);
 
     // clears the transposition table every move
-    chess_board.transposition_table = TranspositionTable::new();
+    // chess_board.transposition_table = TranspositionTable::new();
+
+    // should drain the TT
+    if chess_board.transposition_table.exceed_size(){
+        chess_board.transposition_table.drain();
+    }
+
 
     chess_board.move_limit += 1;
 }
