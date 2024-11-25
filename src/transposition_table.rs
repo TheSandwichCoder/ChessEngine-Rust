@@ -33,6 +33,10 @@ impl TTEntry{
 // entry num = 1048576 (probably around 23mb)
 const TT_SIZE: usize = 2 << 23; 
 
+pub const UPPER_BOUND : u8 = 2;
+pub const LOWER_BOUND : u8 = 1;
+pub const EXACT_BOUND : u8 = 0;
+
 pub struct TranspositionTable{
     pub table: HashMap<u64, TTEntry>,
 }
