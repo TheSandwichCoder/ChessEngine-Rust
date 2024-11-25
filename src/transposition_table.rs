@@ -1,14 +1,32 @@
 use std::collections::HashMap;
 
+// Entry Type:
+// 0 -> exact value
+// 1 -> Lower bound (lower than the actual value)
+// 2 -> upper bound (higher than the actual value)
+
+// type  depth
+// 0 0   0 0 0 0 0 0 
+
+const INFO_DEPTH_MASK : u8 = 0x3F;
+
 pub struct TTEntry{
     pub score: i16,
-    pub depth: u8,
+    pub info: u8,
     pub visited: u8,
 }
 
 impl TTEntry{
-    pub fn new(score: i16, depth: u8) -> TTEntry{
-        TTEntry{score: score, depth: depth, visited:0}
+    pub fn new(score: i16, depth: u8, entry_type: u8) -> TTEntry{
+        TTEntry{score: score, info: depth | entry_type << 6, visited:0}
+    }
+
+    pub fn depth(&self) -> u8{
+        return self.info & INFO_DEPTH_MASK; 
+    }
+
+    pub fn entry_type(&self) -> u8{
+        return self.info >> 6;
     }
 }
 
@@ -22,6 +40,14 @@ pub struct TranspositionTable{
 impl TranspositionTable{
     pub fn new() -> TranspositionTable {
         TranspositionTable {table: HashMap::new() }
+    }
+
+    pub fn contains(&self, hash: &u64) -> bool{
+        return self.table.contains_key(hash);
+    }
+
+    pub fn get_mut(&mut self, hash: &u64) -> &mut TTEntry{
+        return self.table.get_mut(hash).unwrap();;
     }
 
     pub fn size(&self) -> usize{
@@ -38,7 +64,7 @@ impl TranspositionTable{
         return self.size() as f32 / TT_SIZE as f32;
     }
 
-    pub fn add(&mut self, hash:u64, score:i16, depth:u8){
+    pub fn add(&mut self, hash:u64, score:i16, depth:u8, node_type: u8){
 
         // self.table.entry(hash).and_modify(TTEntry::new(score, depth)).or_insert(TTEntry::new(score, depth));
         // updating the balue
@@ -46,13 +72,13 @@ impl TranspositionTable{
             let tt_entry: &mut TTEntry = self.table.get_mut(&hash).unwrap();
             
             tt_entry.score = score;
-            tt_entry.depth = depth;
+            tt_entry.info = node_type << 6 | depth;
             tt_entry.visited += 1;
         }
         else{
             self.table.insert(
                 hash,
-                TTEntry::new(score, depth),
+                TTEntry::new(score, depth, node_type),
             );
         }
     }
