@@ -18,7 +18,7 @@ impl Clone for GameChessBoard {
         let mut game_board = GameChessBoard{
             board: self.board.clone(),
             game_tree: self.game_tree.clone(),
-            transposition_table: TranspositionTable::new(), // too expensive to clone
+            transposition_table: self.transposition_table.clone(),
             move_limit: 0,
         };
         
@@ -53,9 +53,6 @@ pub fn game_make_move(chess_board: &mut GameChessBoard, mv: u16){
     make_move(&mut chess_board.board, mv);
     
     add_to_game_tree(&mut chess_board.game_tree, chess_board.board.zobrist_hash);
-
-    // clears the transposition table every move
-    // chess_board.transposition_table = TranspositionTable::new();
 
     // should drain the TT
     if chess_board.transposition_table.exceed_size(){

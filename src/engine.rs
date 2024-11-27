@@ -576,7 +576,7 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
     // if transposition_table.exceed_size(){
     //     transposition_table.drain();
     // }    
-    transposition_table.clear();
+    // transposition_table.clear();
 
     while curr_depth < MAX_SEARCH_DEPTH{
         // debug_print(&format!("NEW ITERATIVE DEEPENING : DEPTH {}", curr_depth), 0);
@@ -674,21 +674,18 @@ fn discredit_score(score: i16) -> i16{
 }
 
 pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
-    if depth == 0{
-        unsafe{node_counter += 1;}
-        return MoveScorePair::new(0, get_board_score(chess_board));
-        // return quiescence_search(chess_board, transposition_table, alpha, beta);
-    }
-
     if transposition_table.contains(&chess_board.zobrist_hash){
         let tt_entry: &mut TTEntry = transposition_table.table.get_mut(&chess_board.zobrist_hash).unwrap();
 
         // larger / equal search
-        if tt_entry.depth() >= depth{
+        if tt_entry.depth() >= depth + 1{
             
             let entry_type = tt_entry.entry_type();
 
-            tt_entry.visited += 1;
+            if tt_entry.visited < 255{
+                tt_entry.visited += 1;
+            }
+            
 
             if entry_type == EXACT_BOUND{
                 return MoveScorePair::new(0, tt_entry.score);
@@ -705,14 +702,22 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
             // debug_print(&format!("TT LOOKUP fen{} s:{} tt-d:{}", board_to_fen(&sub_board), tt_entry.score, tt_entry.depth()), depth);            
         }
     }
+    
+    if depth == 0{
+        unsafe{node_counter += 1;}
+        return MoveScorePair::new(0, get_board_score(chess_board));
+        // return quiescence_search(chess_board, transposition_table, alpha, beta);
+    }
+
+    
 
     // debug_print(&format!("--NEW SEARCH d:{}--", depth), depth);
     
 
-    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF);
 
     // upper bound
-    let mut TT_entry_type: u8 = 2;
+    let mut TT_entry_type: u8 = UPPER_BOUND;
 
     let mut move_vec_unsorted: Vec<u16> = Vec::new();
 
@@ -762,12 +767,8 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         else{
-            let mut do_search : bool = true;
+            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);                
             
-
-            if do_search{
-                mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);                
-            }
         }
 
         
@@ -794,9 +795,11 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
 
-            alpha = mvel_pair.score;
+            if best_mvel_pair.score > alpha{
+                alpha = mvel_pair.score;
 
-            TT_entry_type = EXACT_BOUND;
+                TT_entry_type = EXACT_BOUND;
+            }
         }
 
         remove_from_game_tree(game_tree, sub_board.zobrist_hash);

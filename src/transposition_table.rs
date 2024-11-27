@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 const INFO_DEPTH_MASK : u8 = 0x3F;
 
+#[derive(Clone)]
 pub struct TTEntry{
     pub score: i16,
     pub info: u8,
@@ -37,6 +38,7 @@ pub const UPPER_BOUND : u8 = 2;
 pub const LOWER_BOUND : u8 = 1;
 pub const EXACT_BOUND : u8 = 0;
 
+#[derive(Clone)]
 pub struct TranspositionTable{
     pub table: HashMap<u64, TTEntry>,
 }
@@ -77,7 +79,10 @@ impl TranspositionTable{
             
             tt_entry.score = score;
             tt_entry.info = node_type << 6 | depth;
-            tt_entry.visited += 1;
+
+            if tt_entry.visited < 255{
+                tt_entry.visited += 1;
+            }
         }
         else{
             self.table.insert(
