@@ -699,14 +699,13 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
                 return MoveScorePair::new(0, tt_entry.score);
             }
             
-            // debug_print(&format!("TT LOOKUP fen{} s:{} tt-d:{}", board_to_fen(&sub_board), tt_entry.score, tt_entry.depth()), depth);            
+            // // debug_print(&format!("TT LOOKUP fen{} s:{} tt-d:{}", board_to_fen(&sub_board), tt_entry.score, tt_entry.depth()), depth);            
         }
     }
     
     if depth == 0{
-        unsafe{node_counter += 1;}
-        return MoveScorePair::new(0, get_board_score(chess_board));
-        // return quiescence_search(chess_board, transposition_table, alpha, beta);
+        // return MoveScorePair::new(0, get_board_score(chess_board));
+        return quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
     }
 
     
@@ -815,40 +814,44 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
     return best_mvel_pair;
 }
 
-pub fn quiescence_search(chess_board: &ChessBoard, transposition_table: &mut TranspositionTable, mut alpha: i16, mut beta: i16) -> MoveScorePair{
-    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, alpha);
+pub fn quiescence_search(chess_board: &ChessBoard, mut alpha: i16, mut beta: i16, depth: u8) -> MoveScorePair{  
+    let stand_pat = get_board_score(chess_board);
 
+    if stand_pat >= beta{
+        return MoveScorePair::new(0, beta);
+    }
+        
+    if alpha < stand_pat{
+        alpha = stand_pat;
+    }
+        
+    
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF);
+
+    // upper bound
     let mut move_vec_unsorted: Vec<u16> = Vec::new();
 
-    get_quiet_moves(chess_board, &mut move_vec_unsorted); 
+    get_capture_moves(chess_board, &mut move_vec_unsorted);
 
-    if move_vec_unsorted.len() == 0{
+    // no legal moves
+    if move_vec_unsorted.len() == 0 || depth == 0{
         unsafe{node_counter += 1;}
         return MoveScorePair::new(0, get_board_score(chess_board));
     }
 
     let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
-    
+
     for mv_weight_pair in move_vec_sorted{
         let mv = mv_weight_pair.mv;
 
         let mut sub_board: ChessBoard = chess_board.clone();
-        let mvel_pair: MoveScorePair;
+        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0);
 
         make_move(&mut sub_board, mv);
         
-        if transposition_table.table.contains_key(&sub_board.zobrist_hash){
-            mvel_pair = MoveScorePair::new(mv, transposition_table.table.get(&sub_board.zobrist_hash).unwrap().score);
-        }
-        else{
-            mvel_pair = -quiescence_search(&sub_board, transposition_table, -beta, -alpha);
-            // transposition_table.table.insert(
-            //     sub_board.zobrist_hash,
-            //     mvel_pair.score,
-            // );
-        }
-        
+        mvel_pair = -quiescence_search(&sub_board, -beta, -alpha, depth - 1);                
+
         if mvel_pair.score >= beta{
             return mvel_pair;
         }
@@ -857,7 +860,7 @@ pub fn quiescence_search(chess_board: &ChessBoard, transposition_table: &mut Tra
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
 
-            if mvel_pair.score > alpha{
+            if best_mvel_pair.score > alpha{
                 alpha = mvel_pair.score;
             }
         }

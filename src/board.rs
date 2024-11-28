@@ -1051,7 +1051,7 @@ pub fn update_board(chess_board: &mut ChessBoard){
     update_board_pin_mask(chess_board);
 }
 
-pub fn get_quiet_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
+pub fn get_capture_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
     let piece_color_offset: usize;
     let opp_all_piece_bitboard: u64;
 
@@ -1064,8 +1064,6 @@ pub fn get_quiet_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
         opp_all_piece_bitboard = chess_board.white_piece_bitboard;
     }
 
-    // standard movement
-
     if !chess_board.is_double_check{
         for piece_type in 0..6{
             let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type + piece_color_offset];
@@ -1077,6 +1075,100 @@ pub fn get_quiet_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
 
                 temp_piece_bitboard ^= 1<<square;
             }
+        }
+    }
+
+    let enpassant_square_x: usize = (chess_board.board_info >> 4) as usize;
+
+    if enpassant_square_x != 0{
+        
+        let mut enpassant_piece_bitboard: u64;
+        let enpassant_to_square: usize;
+        let king_square: u8;
+        
+        if chess_board.board_color{
+            // this is really ugly, but it avoids me making a new cache just for enpassant
+            // gets the pawns that can enpassant
+            enpassant_piece_bitboard = WHITE_PAWN_ATTACK_MASK[31+enpassant_square_x] & chess_board.piece_bitboards[0];
+            enpassant_to_square = 15 + enpassant_square_x;
+            king_square = chess_board.piece_bitboards[5].trailing_zeros() as u8;
+        }
+        else{
+            enpassant_piece_bitboard = WHITE_PAWN_ATTACK_MASK[39+enpassant_square_x] & chess_board.piece_bitboards[6];
+            enpassant_to_square = 39 + enpassant_square_x;
+            king_square = chess_board.piece_bitboards[11].trailing_zeros() as u8;
+        }
+
+        while enpassant_piece_bitboard != 0{
+            let passant_square: u8 = enpassant_piece_bitboard.trailing_zeros() as u8;
+            enpassant_piece_bitboard ^= 1<<passant_square;
+
+            // the pawn is pinned
+            if chess_board.pin_mask & 1<<passant_square != 0{
+                
+                // piece is vertical to king and cant passant
+                if get_direction(king_square, passant_square as u8){
+                    continue;
+                }
+
+                // the target square is not allowed by pin mask
+                if chess_board.pin_mask & (1<<enpassant_to_square) == 0{
+                    continue;
+                }
+            }
+
+            // king is in check
+            if chess_board.check_mask != 0{
+                if chess_board.board_color{
+                    // cannot capture the pawn that is checking the king
+                    if chess_board.check_mask & 1 << (enpassant_to_square + 8) == 0{
+                        continue;
+                    }
+                }
+                else{
+                    if chess_board.check_mask & 1 << (enpassant_to_square - 8) == 0{
+                        continue;
+                    }
+                } 
+            }
+
+            // Really annoying edge case where pinned doesnt cover
+            // make sure there is only 1 en passant
+            if enpassant_piece_bitboard == 0{
+                if chess_board.board_color{
+                    // on the en passant row
+                    if king_square / 8 == 3{
+                        let mut important_blockers = chess_board.all_piece_bitboard;
+                        // get rid of passsant pawn and capturing pawn
+                        important_blockers ^= 1 << (enpassant_to_square + 8);
+                        important_blockers ^= 1 << (passant_square);
+
+                        // check if there is a queen or rook
+                        if get_rook_move_bitboard(king_square as usize, important_blockers) 
+                        & (chess_board.piece_bitboards[9] | chess_board.piece_bitboards[10]) != 0{
+                            continue;
+                        }
+                    }
+                }
+                else{
+                    // on the en passnat row
+                    if king_square / 8 == 4{
+                        let mut important_blockers = chess_board.all_piece_bitboard;
+                        // get rid of passsant pawn and capturing pawn
+                        important_blockers ^= 1 << (enpassant_to_square - 8);
+                        important_blockers ^= 1 << (passant_square);
+
+                        // check if there is a queen or rook
+                        if get_rook_move_bitboard(king_square as usize, important_blockers) 
+                        & (chess_board.piece_bitboards[3] | chess_board.piece_bitboards[4]) != 0{
+                            continue;
+                        }
+                    }
+                }
+            }
+            
+
+            move_vec.push(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
         }
     }
 }
