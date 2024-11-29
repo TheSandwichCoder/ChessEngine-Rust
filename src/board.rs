@@ -335,7 +335,10 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     chess_board.board_color = move_turn == 1;
     chess_board.board_info |= enpassant_square << 4;
 
-    update_board(&mut chess_board);
+    // update_board(&mut chess_board);
+    chess_board.attack_mask = 0;
+    chess_board.pin_mask = 0;
+    chess_board.check_mask = !0;
 
     // zobrist
     chess_board.zobrist_hash = get_full_zobrist_hash(&chess_board);
@@ -728,6 +731,7 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
     // flip the color for zobrist hash
     chess_board.zobrist_hash ^= BOARD_COLOR_HASH;
 
+    // update_board_attack_mask(chess_board);
     update_board(chess_board);
 }
 
@@ -1051,7 +1055,9 @@ pub fn update_board(chess_board: &mut ChessBoard){
     update_board_pin_mask(chess_board);
 }
 
-pub fn get_capture_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
+pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
+    update_board(chess_board);
+
     let piece_color_offset: usize;
     let opp_all_piece_bitboard: u64;
 
@@ -1173,8 +1179,8 @@ pub fn get_capture_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
     }
 }
 
-pub fn get_moves(chess_board: &ChessBoard, move_vec: &mut Vec<u16>){
-    // white to move
+pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
+    update_board(chess_board);
 
     let piece_color_offset: usize;
 

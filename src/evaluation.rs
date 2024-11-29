@@ -8,7 +8,7 @@ use crate::app_settings::MOVE_LIMIT_MAX;
 // 1 - white checkmate
 // 2 - black checkmate
 // 3 - draw
-pub fn get_gamestate(game_board: &GameChessBoard) -> u8{
+pub fn get_gamestate(game_board: &mut GameChessBoard) -> u8{
     for (_, counter) in &game_board.game_tree {
         // repeated 3 times. Draw
         if *counter >= 3{
@@ -18,7 +18,7 @@ pub fn get_gamestate(game_board: &GameChessBoard) -> u8{
 
     let mut move_vec: Vec<u16> = Vec::new();
 
-    let chess_board : &ChessBoard = &game_board.board; 
+    let chess_board : &mut ChessBoard = &mut game_board.board; 
 
     get_moves(chess_board, &mut move_vec);
 
@@ -481,8 +481,12 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     // return (score as f32 * endgame_weight) as i16;
 }
 
+// when you look at this you may go "what was he thinking..." 
+// but let me remind you that trying to understand my own code and fix
+// it is harder than making it look ugly
 pub fn get_attack_square_score(board: &ChessBoard, endgame_weight: f32) -> i16{
-    let mut opp_attack_bitboard : u64 = board.attack_mask;
+    // let mut opp_attack_bitboard : u64 = get_board_attack_mask(board, !board.board_color);
+    let mut opp_attack_bitboard: u64 = board.attack_mask;
     let mut self_attack_bitboard : u64 = get_board_attack_mask(board, board.board_color);
     let mut score : i16 = 0;
 

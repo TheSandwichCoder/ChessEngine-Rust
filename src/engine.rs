@@ -219,7 +219,7 @@ pub fn chess_battle(){
 
             {
                 // update the fen position lookup
-                fs::write("FenPositionLookup.txt", format!("{}|{}", get_gamestate(&game_board), board_to_fen(&game_board.board)));
+                fs::write("FenPositionLookup.txt", format!("{}|{}", get_gamestate(&mut game_board), board_to_fen(&game_board.board)));
 
                 // provide move
                 fs::write(file_path.clone(), format!("5|{}",mvel_pair.mv));
@@ -233,7 +233,7 @@ pub fn chess_battle(){
 }
 
 // gets the number of nodes given an iteration depth
-pub fn perft(board: &ChessBoard, depth: u16) -> u32{
+pub fn perft(board: &mut ChessBoard, depth: u16) -> u32{
     // base case
     if depth == 0{
         get_board_score(&board);
@@ -251,13 +251,13 @@ pub fn perft(board: &ChessBoard, depth: u16) -> u32{
 
         make_move(&mut sub_board, mv);
 
-        node_num += perft(&sub_board, depth - 1);
+        node_num += perft(&mut sub_board, depth - 1);
     } 
 
     return node_num;
 }
 
-pub fn sub_perft(board: &ChessBoard, depth: u16){
+pub fn sub_perft(board: &mut ChessBoard, depth: u16){
     let mut move_vec: Vec<u16> = Vec::new();
 
     get_moves(board, &mut move_vec);
@@ -269,7 +269,7 @@ pub fn sub_perft(board: &ChessBoard, depth: u16){
 
         make_move(&mut sub_board, mv);
 
-        let move_num: u32 = perft(&sub_board, depth - 1);
+        let move_num: u32 = perft(&mut sub_board, depth - 1);
 
         total_counter += move_num;
         println!("{}|{}",get_move_string(mv), move_num);
@@ -278,7 +278,7 @@ pub fn sub_perft(board: &ChessBoard, depth: u16){
     println!("Total: {}", total_counter);
 }
 
-pub fn debug_zobrist_hash(board: &ChessBoard, depth:u16){
+pub fn debug_zobrist_hash(board: &mut ChessBoard, depth:u16){
     // base case
     if depth == 0{
         return;
@@ -301,7 +301,7 @@ pub fn debug_zobrist_hash(board: &ChessBoard, depth:u16){
             return;
         }
 
-        debug_zobrist_hash(&sub_board, depth - 1);
+        debug_zobrist_hash(&mut sub_board, depth - 1);
     } 
 }
 
@@ -418,7 +418,7 @@ pub fn debug(game_board: &mut GameChessBoard){
         else if input_string == "show moves"{
             let mut move_vec: Vec<u16> = Vec::new();
 
-            get_moves(&game_board.board, &mut move_vec);
+            get_moves(&mut game_board.board, &mut move_vec);
 
             print_moves(&move_vec);
         }
@@ -434,7 +434,7 @@ pub fn debug(game_board: &mut GameChessBoard){
 
             let depth: u16 = input_string.trim().parse().expect("cannot parse string to int");
 
-            sub_perft(&game_board.board, depth);
+            sub_perft(&mut game_board.board, depth);
         }
 
         else if input_string == "debug z"{
@@ -448,7 +448,7 @@ pub fn debug(game_board: &mut GameChessBoard){
 
             let depth: u16 = input_string.trim().parse().expect("cannot parse string to int");
 
-            debug_zobrist_hash(&game_board.board, depth);
+            debug_zobrist_hash(&mut game_board.board, depth);
         }
 
         else if input_string == "best move"{
@@ -470,12 +470,16 @@ pub fn debug(game_board: &mut GameChessBoard){
         }
 
         else if input_string == "bench -best"{
-            position_bench();
+            position_bench(0);
+        }
+
+        else if input_string == "bench -perft"{
+            position_bench(1);
         }
     }
 }
 
-pub fn position_bench(){
+pub fn position_bench(flag: u8){
     let mut fen_pos_array: Vec<String> = vec![
         "r2qkb1r/pb3ppp/1pn1pn2/2p5/2pP4/PP3NP1/4PPBP/RNBQ1RK1 w kq - 0 9".to_string(),
         "r1b2rk1/1pqp1ppp/p3pn2/P7/1b2P3/1NNPBP2/1P4PP/R2QK2R w KQ - 1 13".to_string(),
@@ -507,7 +511,14 @@ pub fn position_bench(){
 
         let t_start = Instant::now();
         
-        get_best_move_negamax(&game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 3, -INF, INF, &Timer::new(Duration::from_secs(10)));
+        if flag == 0{
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, -INF, INF, &Timer::new(Duration::from_secs(10)));
+        }
+        else if flag == 1{
+            unsafe{
+                node_counter = perft(&mut game_board.board, 5);
+            }
+        }
 
         let time_taken = t_start.elapsed().as_millis();
 
@@ -547,14 +558,14 @@ static mut CURR_SEARCH_DEPTH : u8 = 0;
 pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> MoveScorePair{
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
-    return iterative_deepening(&game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
+    return iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
 }
 
 // testing fens:
 // 2Q2nk1/p4p1p/1p2rnp1/3p4/3P3q/BP6/P2N4/2K2R b - - - 
 
 // heavily inspired by pleco engine... again
-pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u32) -> MoveScorePair{
+pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u32) -> MoveScorePair{
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
@@ -601,7 +612,7 @@ pub fn iterative_deepening(chess_board: &ChessBoard, game_tree: &mut HashMap<u64
 
             make_move(&mut sub_board, mv);
 
-            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, curr_depth - 1, -beta, -alpha, &timer);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, -beta, -alpha, &timer);
             // println!("{} {} a:{}",get_move_string(mv), mvel_pair.score, alpha);
 
             
@@ -673,7 +684,7 @@ fn discredit_score(score: i16) -> i16{
 
 }
 
-pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if transposition_table.contains(&chess_board.zobrist_hash){
         let tt_entry: &mut TTEntry = transposition_table.table.get_mut(&chess_board.zobrist_hash).unwrap();
 
@@ -766,7 +777,7 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);                
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, -beta, -alpha, timer);                
             
         }
 
@@ -814,7 +825,7 @@ pub fn get_best_move_negamax(chess_board: &ChessBoard, game_tree: &mut HashMap<u
     return best_mvel_pair;
 }
 
-pub fn quiescence_search(chess_board: &ChessBoard, mut alpha: i16, mut beta: i16, depth: u8) -> MoveScorePair{  
+pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta: i16, depth: u8) -> MoveScorePair{  
     let stand_pat = get_board_score(chess_board);
 
     if stand_pat >= beta{
@@ -850,7 +861,7 @@ pub fn quiescence_search(chess_board: &ChessBoard, mut alpha: i16, mut beta: i16
 
         make_move(&mut sub_board, mv);
         
-        mvel_pair = -quiescence_search(&sub_board, -beta, -alpha, depth - 1);                
+        mvel_pair = -quiescence_search(&mut sub_board, -beta, -alpha, depth - 1);                
 
         if mvel_pair.score >= beta{
             return mvel_pair;

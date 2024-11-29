@@ -283,7 +283,7 @@ fn update_board_position(
             }
         }
 
-        let game_board_state = get_gamestate(&parent_struct.game_board);
+        let game_board_state = get_gamestate(&mut parent_struct.game_board);
         if game_board_state == 1{
             next_state.set(GameState::WhiteMate);
         }
@@ -370,7 +370,7 @@ fn player_move_piece(
     let (mut piece_follow_texture, mut piece_follow) = piece_follow.single_mut();
     let mut board_parent = board_parent.single_mut();
 
-    let game_board : &GameChessBoard = &board_parent.game_board;
+    let game_board : & GameChessBoard = & board_parent.game_board;
 
     let mouse_position = q_windows.single().cursor_position();
 
@@ -402,7 +402,7 @@ fn player_move_piece(
         else{
             let mut move_vec: Vec<u16> = Vec::new();
 
-            get_moves(&game_board.board, &mut move_vec);
+            get_moves(&mut board_parent.game_board.board, &mut move_vec);
 
             let mut is_legal : bool = false;
             
@@ -440,7 +440,7 @@ fn player_move_piece(
             print_move_command_debug(move_code);
             println!("{}", board_to_fen(&board_parent.game_board.board));
 
-            let game_board_state = get_gamestate(&board_parent.game_board);
+            let game_board_state = get_gamestate(&mut board_parent.game_board);
 
             // the game ended
             if game_board_state != 0{
