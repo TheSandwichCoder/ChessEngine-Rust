@@ -40,7 +40,7 @@ pub const BLACK_LEFT_ROOK_DEFAULT: u64 = 0x1;
 pub const BLACK_RIGHT_ROOK_DEFAULT: u64 = 0x80;
 
 
-const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut Vec<u16>, u8, u64); 6] = [
+const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut MoveBuffer, u8, u64); 6] = [
     add_pawn_moves, 
     add_bishop_moves, 
     add_knight_moves,
@@ -335,7 +335,7 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
     chess_board.board_color = move_turn == 1;
     chess_board.board_info |= enpassant_square << 4;
 
-    // update_board(&mut chess_board);
+    // reset all the important masks
     chess_board.attack_mask = 0;
     chess_board.pin_mask = 0;
     chess_board.check_mask = !0;
@@ -1061,6 +1061,8 @@ pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
     let piece_color_offset: usize;
     let opp_all_piece_bitboard: u64;
 
+    let mut move_buffer: MoveBuffer = MoveBuffer::new();
+
     if chess_board.board_color{
         piece_color_offset = 0;
         opp_all_piece_bitboard = chess_board.black_piece_bitboard;
@@ -1077,7 +1079,7 @@ pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square, opp_all_piece_bitboard);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, &mut move_buffer, square, opp_all_piece_bitboard);
 
                 temp_piece_bitboard ^= 1<<square;
             }
@@ -1174,9 +1176,12 @@ pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             }
             
 
-            move_vec.push(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
+            move_buffer.add(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
         }
     }
+
+    let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
+    *move_vec = Vec::from(move_buffer_slice);
 }
 
 pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
@@ -1191,6 +1196,8 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
         piece_color_offset = 6;
     }
 
+    let mut move_buffer: MoveBuffer = MoveBuffer::new();
+
     // standard movement
 
     if !chess_board.is_double_check{
@@ -1200,7 +1207,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_vec, square, !0);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, &mut move_buffer, square, !0);
 
                 temp_piece_bitboard ^= 1<<square;
             }
@@ -1211,7 +1218,10 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
 
         let king_square:u8 = chess_board.piece_bitboards[5+piece_color_offset].trailing_zeros() as u8;
 
-        MOVE_FUNCTIONS_ARRAY[5](chess_board, move_vec, king_square, !0);
+        MOVE_FUNCTIONS_ARRAY[5](chess_board, &mut move_buffer, king_square, !0);
+
+        let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
+        *move_vec = Vec::from(move_buffer_slice);
 
         // can break early
         return;
@@ -1230,7 +1240,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
     while pawn_double_move_bitboards != 0{
         let square:u8 = pawn_double_move_bitboards.trailing_zeros() as u8;
 
-        add_pawn_double_move(chess_board, move_vec, square);
+        add_pawn_double_move(chess_board, &mut move_buffer, square);
 
         pawn_double_move_bitboards ^= 1<<square;
     }
@@ -1244,7 +1254,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             if chess_board.board_info & 0x8 != 0  {
                 // no attack squares - no pieces - not in check
                 if (chess_board.all_piece_bitboard & WHITE_CASTLE_LEFT_BLOCKER_MASK == 0) && (chess_board.attack_mask & WHITE_CASTLE_LEFT_ATTACK_MASK == 0){
-                    move_vec.push(GET_MOVE_CODE_SPECIAL(60, 58, 9));
+                    move_buffer.add(GET_MOVE_CODE_SPECIAL(60, 58, 9));
                 } 
             }
             
@@ -1252,7 +1262,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             if chess_board.board_info & 0x4 != 0{
                 // no attack squares or blockers
                 if (chess_board.all_piece_bitboard|chess_board.attack_mask) & WHITE_CASTLE_RIGHT_BLOCKER_MASK == 0{
-                    move_vec.push(GET_MOVE_CODE_SPECIAL(60, 62, 10));
+                    move_buffer.add(GET_MOVE_CODE_SPECIAL(60, 62, 10));
                 }
             }
         }
@@ -1261,14 +1271,14 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             if chess_board.board_info & 0x2 != 0  {
                 // no attack squares - no pieces - not in check
                 if (chess_board.all_piece_bitboard & BLACK_CASTLE_LEFT_BLOCKER_MASK == 0) && (chess_board.attack_mask & BLACK_CASTLE_LEFT_ATTACK_MASK == 0){
-                    move_vec.push(GET_MOVE_CODE_SPECIAL(4, 2, 11));
+                    move_buffer.add(GET_MOVE_CODE_SPECIAL(4, 2, 11));
                 }
             }
             
             // castle right is possible
             if chess_board.board_info & 0x1 != 0{
                 if (chess_board.all_piece_bitboard|chess_board.attack_mask) & BLACK_CASTLE_RIGHT_BLOCKER_MASK == 0{
-                    move_vec.push(GET_MOVE_CODE_SPECIAL(4, 6, 12));
+                    move_buffer.add(GET_MOVE_CODE_SPECIAL(4, 6, 12));
                 }
             }
         }
@@ -1365,7 +1375,10 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             }
             
 
-            move_vec.push(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
+            move_buffer.add(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
         }
     }
+    
+    let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
+    *move_vec = Vec::from(move_buffer_slice);
 }

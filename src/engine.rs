@@ -672,18 +672,6 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     return best_mvel;
 }
 
-fn discredit_score(score: i16) -> i16{
-    if score > 0{
-        return score - 1;
-    }
-    else if score < 0{
-        return score + 1;
-    }
-
-    return score;
-
-}
-
 pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     if transposition_table.contains(&chess_board.zobrist_hash){
         let tt_entry: &mut TTEntry = transposition_table.table.get_mut(&chess_board.zobrist_hash).unwrap();

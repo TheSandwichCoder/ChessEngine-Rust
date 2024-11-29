@@ -63,6 +63,24 @@ pub struct SMagic {
     pub shift: u32,
 }
 
+const MAX_MOVE_COUNT: usize = 118;
+
+pub struct MoveBuffer{
+    pub index: usize,
+    pub mv_arr: [u16; MAX_MOVE_COUNT],
+}
+
+impl MoveBuffer{
+    pub fn new() -> MoveBuffer{
+        return MoveBuffer{index: 0, mv_arr: [0;MAX_MOVE_COUNT]}
+    }
+
+    pub fn add(&mut self, mv: u16){
+        self.mv_arr[self.index] = mv;
+        self.index += 1;
+    }
+}
+
 const fn GET_PAWN_ATTACK_MASK(color: bool) -> [u64; 64]{
     let mut attack_array : [u64; 64] = [0; 64];
     let mut counter : u8 = 0;
@@ -651,14 +669,14 @@ pub fn get_direction(square1: u8, square2: u8) -> bool{
 }
 
 fn add_moves(
-    move_vector: &mut Vec<u16>,
+    move_buffer: &mut MoveBuffer,
     from_square: u8,
     mut move_bitboard: u64,
 ){
   while move_bitboard != 0{
     let to_square : u8 = move_bitboard.trailing_zeros().try_into().unwrap();
 
-    move_vector.push(get_move_code(from_square, to_square));
+    move_buffer.add(get_move_code(from_square, to_square));
 
     move_bitboard ^= 1<<to_square;
   }
@@ -701,7 +719,7 @@ pub fn get_queen_move_bitboard(
 
 pub fn add_rook_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>,
+    move_buffer: &mut MoveBuffer,
     square: u8,
     restriction_mask: u64
 ){
@@ -736,12 +754,12 @@ pub fn add_rook_moves(
         rook_move_bitboard &= chess_board.check_mask;
     }
 
-    add_moves(move_vector, square, rook_move_bitboard);
+    add_moves(move_buffer, square, rook_move_bitboard);
 }
 
 pub fn add_bishop_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>,
+    move_buffer: &mut MoveBuffer,
     square: u8,
     restriction_mask: u64,
 ){
@@ -776,12 +794,12 @@ pub fn add_bishop_moves(
         bishop_move_bitboard &= chess_board.check_mask;
     }
 
-    add_moves(move_vector, square, bishop_move_bitboard);
+    add_moves(move_buffer, square, bishop_move_bitboard);
 }
 
 pub fn add_queen_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
+    move_buffer: &mut MoveBuffer, 
     square: u8, 
     restriction_mask: u64,
 ){
@@ -818,14 +836,14 @@ pub fn add_queen_moves(
         queen_move_bitboard &= chess_board.check_mask;
     }
 
-    add_moves(move_vector, square, queen_move_bitboard);
+    add_moves(move_buffer, square, queen_move_bitboard);
 }
 
 // Non-Sliding Pieces
 
 pub fn add_knight_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
+    move_buffer: &mut MoveBuffer, 
     square: u8, 
     restriction_mask: u64
 ){
@@ -850,13 +868,13 @@ pub fn add_knight_moves(
 
         move_bitboard &= restriction_mask;
 
-        add_moves(move_vector, square, move_bitboard);
+        add_moves(move_buffer, square, move_bitboard);
     }
 }
 
 pub fn add_king_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
+    move_buffer: &mut MoveBuffer, 
     square: u8, 
     restriction_mask: u64
 ){
@@ -870,25 +888,25 @@ pub fn add_king_moves(
 
     let move_bitboard:u64 = KING_MOVE_MASK[square as usize] & !chess_board.attack_mask & !friendly_blockers & restriction_mask;
 
-    add_moves(move_vector, square, move_bitboard);
+    add_moves(move_buffer, square, move_bitboard);
 }
 
-fn add_pawn_promotion_moves(from_square: u8, to_square: u8, move_vector: &mut Vec<u16>){
-    move_vector.push(get_move_code_special(from_square, to_square, 5));
-    move_vector.push(get_move_code_special(from_square, to_square, 6));
-    move_vector.push(get_move_code_special(from_square, to_square, 7));
-    move_vector.push(get_move_code_special(from_square, to_square, 8));
+fn add_pawn_promotion_moves(from_square: u8, to_square: u8, move_buffer: &mut MoveBuffer){
+    move_buffer.add(get_move_code_special(from_square, to_square, 5));
+    move_buffer.add(get_move_code_special(from_square, to_square, 6));
+    move_buffer.add(get_move_code_special(from_square, to_square, 7));
+    move_buffer.add(get_move_code_special(from_square, to_square, 8));
 }
 
 fn add_moves_pawn_promotion(
-    move_vector: &mut Vec<u16>,
+    move_buffer: &mut MoveBuffer,
     from_square: u8,
     mut move_bitboard: u64,
 ){
   while move_bitboard != 0{
     let to_square : u8 = move_bitboard.trailing_zeros().try_into().unwrap();
 
-    add_pawn_promotion_moves(from_square, to_square, move_vector);
+    add_pawn_promotion_moves(from_square, to_square, move_buffer);
 
     move_bitboard ^= 1<<to_square;
   }
@@ -897,7 +915,7 @@ fn add_moves_pawn_promotion(
 // this assumes that it is possible for double move
 pub fn add_pawn_double_move(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>, 
+    move_buffer: &mut MoveBuffer, 
     square: u8,
 ){
     let mut move_bitboard = 0;
@@ -940,17 +958,17 @@ pub fn add_pawn_double_move(
 
     if move_bitboard != 0{
         if chess_board.board_color{
-            move_vector.push(get_move_code_special(square, square-16, 2));
+            move_buffer.add(get_move_code_special(square, square-16, 2));
         }
         else{
-            move_vector.push(get_move_code_special(square, square+16, 2));
+            move_buffer.add(get_move_code_special(square, square+16, 2));
         }
     }
 }
 
 pub fn add_pawn_moves(
     chess_board: &ChessBoard,
-    move_vector: &mut Vec<u16>,
+    move_buffer: &mut MoveBuffer,
     square: u8,
     restriction_mask: u64,
 ){
@@ -1021,9 +1039,9 @@ pub fn add_pawn_moves(
 
     // if one of the moves is a promotion, we can assumne all are... somehow
     if move_bitboard & PROMOTION_BITBOARD_MASK != 0{
-        add_moves_pawn_promotion(move_vector, square, move_bitboard);
+        add_moves_pawn_promotion(move_buffer, square, move_bitboard);
     }
     else{
-        add_moves(move_vector, square, move_bitboard);
+        add_moves(move_buffer, square, move_bitboard);
     }
 }
