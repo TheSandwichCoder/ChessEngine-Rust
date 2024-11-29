@@ -18,11 +18,13 @@ Features:
 - doubled pawn penalty
 - passed pawn score
 - accompanied pawn bias
+- transposition table
+- quiescence search
+- move ordering
 
 Goals:
-- transposition table
-- quiscience search
-- move priority search
 - pawn promotion
 - king safety bias
 - castling bias
+- move extensions
+- 
