@@ -12,7 +12,7 @@ pub const IMAGE_SIZES: f32 = 100.0;
 pub const SCALE_FACTOR: f32 = SQUARE_SIZE / IMAGE_SIZES; 
 
 pub const DEFAULT_FEN: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-pub const DEFAULT_THINK_TIME: u16 = 1000;
+pub const DEFAULT_THINK_TIME: u16 = 3000;
 pub const MAX_SEARCH_DEPTH: u8 = 15;
 pub const QUIESCENCE_DEPTH_LIMIT: u8 = 20;
 pub const BATTLE_DEPTH: u8 = 5;

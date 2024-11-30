@@ -21,10 +21,10 @@ Features:
 - transposition table
 - quiescence search
 - move ordering
+- king safety
 
 Goals:
 - pawn promotion
-- king safety bias
 - castling bias
 - move extensions
 - 
