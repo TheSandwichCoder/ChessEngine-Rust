@@ -437,6 +437,10 @@ pub fn debug(game_board: &mut GameChessBoard){
             sub_perft(&mut game_board.board, depth);
         }
 
+        else if input_string == "show eval"{
+            println!("Evaluation (rel): {}", get_board_score(&game_board.board));
+        }
+
         else if input_string == "debug z"{
             input_string.clear();
             print!("depth >>");

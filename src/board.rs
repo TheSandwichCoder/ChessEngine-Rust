@@ -735,6 +735,44 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
     update_board(chess_board);
 }
 
+pub fn get_board_individual_attack_mask(chess_board: &ChessBoard, attack_arr: &mut [u64; 12]){
+    for piece_type in 0..12{
+        let mut temp_piece_bitboard: u64 = chess_board.piece_bitboards[piece_type];
+
+        let rel_piece_type: u8 = piece_type as u8 % 6;
+
+        while temp_piece_bitboard != 0{
+            let square : usize = temp_piece_bitboard.trailing_zeros() as usize;
+            if rel_piece_type == 0{
+                if piece_type == 0{
+                    attack_arr[piece_type as usize] |= WHITE_PAWN_ATTACK_MASK[square];
+                }
+                else{
+                    attack_arr[piece_type as usize] |= BLACK_PAWN_ATTACK_MASK[square];
+                }
+                
+            }
+            else if rel_piece_type == 1{
+                attack_arr[piece_type as usize] |= get_bishop_move_bitboard(square, chess_board.all_piece_bitboard);
+            }
+            else if rel_piece_type == 2{
+                attack_arr[piece_type as usize] |= KNIGHT_MOVE_MASK[square];
+            }
+            else if rel_piece_type == 3{
+                attack_arr[piece_type as usize] |= get_rook_move_bitboard(square, chess_board.all_piece_bitboard);
+            }
+            else if rel_piece_type == 4{
+                attack_arr[piece_type as usize] |= get_queen_move_bitboard(square, chess_board.all_piece_bitboard);                    
+            }
+            else if rel_piece_type == 5{
+                attack_arr[piece_type as usize] |= KING_MOVE_MASK[square];
+            }
+
+            temp_piece_bitboard ^= 1<<square;
+        }
+    }    
+}
+
 pub fn get_board_attack_mask(chess_board: &ChessBoard, color: bool) -> u64{
     let mut attack_mask : u64 = 0;
 

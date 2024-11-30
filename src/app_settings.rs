@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-pub const ENGINE_VERSION: &'static str = "9.6";
+pub const ENGINE_VERSION: &'static str = "9.85";
 
 pub const SCREENSIZE: Vec3 = Vec3::new(650.0, 650.0, 0.0);
 pub const HALF_SCREENSIZE: Vec3 = Vec3::new(SCREENSIZE.x / 2.0, SCREENSIZE.y / 2.0, 0.0);

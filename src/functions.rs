@@ -99,6 +99,10 @@ pub fn lerp_int(val1: i16, val2:i16, n:f32) -> i16{
     return lerp(val1 as f32, val2 as f32, n) as i16;
 }
 
+pub fn int_float_mul(val1: i16, val2: f32) -> i16{
+    return (val1 as f32 * val2) as i16;
+}
+
 pub fn get_manhattan_distance(square1: i16, square2: i16) -> u16{
     let x1: i16 = square1 % 8;
     let y1: i16 = square1 / 8;
@@ -107,4 +111,14 @@ pub fn get_manhattan_distance(square1: i16, square2: i16) -> u16{
     let y2: i16 = square2 / 8;
 
     return ((x1 - x2).abs() + (y1 - y2).abs()) as u16;
+}
+
+pub fn or_together(slice: &[u64]) -> u64{
+    let mut final_bitboard : u64 = 0;
+
+    for bitboard in slice{
+        final_bitboard |= bitboard;
+    }
+
+    return final_bitboard;
 }

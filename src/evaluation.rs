@@ -213,7 +213,7 @@ pub fn reverse_piece_square_index(index: usize) -> usize{
     let y = index / 8;
     let x = index % 8;
 
-    return 7-y + x;
+    return (7-y) * 8 + x;
 }
 
 
@@ -331,9 +331,7 @@ pub fn get_board_piece_square_score(board: &ChessBoard) -> i16{
 
         while temp_bitboard != 0{
             let piece_square: usize = temp_bitboard.trailing_zeros() as usize;
-
             score -= piece_square_table[reverse_piece_square_index(piece_square)];
-
             temp_bitboard ^= 1 << piece_square;
         }
     }
@@ -380,6 +378,7 @@ pub fn get_pawn_piece_square_score(board: &ChessBoard, endgame_weight: f32) -> i
 
 const HORIZONTAL_SLICE_BITBOARD : u64 = 0xFF00000000000000;
 const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
+const HALF_SLICE_BITBOARD: u64 = (!0)<<32;
 
 pub fn doubled_pawn_score(board: &ChessBoard) -> i16{
     let mut score : i16 = 0;
@@ -481,50 +480,21 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     // return (score as f32 * endgame_weight) as i16;
 }
 
-// when you look at this you may go "what was he thinking..." 
-// but let me remind you that trying to understand my own code and fix
-// it is harder than making it look ugly
-pub fn get_attack_square_score(board: &ChessBoard, endgame_weight: f32) -> i16{
-    let mut opp_attack_bitboard : u64 = get_board_attack_mask(board, !board.board_color);
-    let mut self_attack_bitboard : u64 = get_board_attack_mask(board, board.board_color);
+pub fn get_attack_square_score(mut white_attack_bitboard : u64, mut black_attack_bitboard: u64, endgame_weight: f32) -> i16{
     let mut score : i16 = 0;
 
     let inv_endgame : f32 = 1.0 - endgame_weight;
 
-    // king safety check
-    let self_king_square: usize;
-    let opp_king_square: usize;
+    score += white_attack_bitboard.count_ones() as i16 * 2;
+    score -= black_attack_bitboard.count_ones() as i16 * 2;
 
-    if board.board_color{
-        self_king_square = board.piece_bitboards[5].trailing_zeros() as usize;
-        opp_king_square = board.piece_bitboards[11].trailing_zeros() as usize;
-    }
-    else{
-        self_king_square = board.piece_bitboards[11].trailing_zeros() as usize;
-        opp_king_square = board.piece_bitboards[5].trailing_zeros() as usize;
-    }
+    white_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
+    black_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
 
-    // penalise if king is open
-    if endgame_weight < 0.3{
-        score -= ((KING_MOVE_MASK[self_king_square] & opp_attack_bitboard).count_ones() as f32 * 5.0 * inv_endgame) as i16;
-        score += ((KING_MOVE_MASK[opp_king_square] & self_attack_bitboard).count_ones() as f32 * 5.0 * inv_endgame) as i16;
-    }
-    
-    score -= (opp_attack_bitboard.count_ones() * 2) as i16;
-    score += (self_attack_bitboard.count_ones() * 2) as i16;
+    score += white_attack_bitboard.count_ones() as i16 * 10;
+    score -= black_attack_bitboard.count_ones() as i16 * 10;
 
-    opp_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
-    self_attack_bitboard &= IMPORTANT_ATTACK_SQUARES_MASK;
-
-    score -= (opp_attack_bitboard.count_ones() * 10) as i16;
-    score += (self_attack_bitboard.count_ones() * 10) as i16;
-
-    if board.board_color{
-        return score;
-    }
-    else{
-        return -score;
-    }
+    return int_float_mul(score, inv_endgame);
 }
 
 pub fn bishop_knight_endgame_bias(board: &ChessBoard, board_color: bool, endgame_weight: f32) -> i16{
@@ -569,27 +539,127 @@ pub fn bishop_knight_endgame_bias(board: &ChessBoard, board_color: bool, endgame
     }
 }
 
+// -40 if king is no near pawns
+// 0 if 3 pawns surrounding
+const PAWN_SHIELD_PENALTY : [i16; 8] = [-40, -30, -10, 0, 5, 5, 5, 5];
+
+// directly copied from stockfish... gosh I love open source
+const ATTACK_UNIT_TABLE: [i16; 100] = [
+    0,  0,   1,   2,   3,   5,   7,   9,  12,  15,
+  18,  22,  26,  30,  35,  39,  44,  50,  56,  62,
+  68,  75,  82,  85,  89,  97, 105, 113, 122, 131,
+ 140, 150, 169, 180, 191, 202, 213, 225, 237, 248,
+ 260, 272, 283, 295, 307, 319, 330, 342, 354, 366,
+ 377, 389, 401, 412, 424, 436, 448, 459, 471, 483,
+ 494, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+];
+
+// bishop and knight -> 2
+// rook -> 3
+// queen -> 5
+const PIECE_ATTACK_UNIT: [u8; 4] = [
+    2, 2, 3, 5
+];
+
+pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack_squares : &[u64;12], endgame_weight: f32) -> i16{
+    let king_square: u8;
+    let king_infront_rows_bitboard: u64;
+    let friendly_piece_bitboard: u64;
+    let friendly_pawn_bitboard: u64;
+    let piece_offset: usize;
+
+    if board_color{
+        king_square = board.piece_bitboards[5].trailing_zeros() as u8;
+        king_infront_rows_bitboard = HALF_SLICE_BITBOARD >> (7-king_square/8) * 8;
+        friendly_piece_bitboard = board.white_piece_bitboard;
+        friendly_pawn_bitboard = board.piece_bitboards[0];
+        piece_offset = 6;
+    }
+    else{
+        king_square = board.piece_bitboards[11].trailing_zeros() as u8;
+        king_infront_rows_bitboard = !HALF_SLICE_BITBOARD << (king_square / 8) * 8;
+        friendly_piece_bitboard = board.black_piece_bitboard;
+        friendly_pawn_bitboard = board.piece_bitboards[6];
+        piece_offset = 0;
+    }
+
+    let king_x = king_square % 8;
+    let king_zone : u64 = KING_MOVE_MASK[king_square as usize] | (king_infront_rows_bitboard & VERTICLE_SLICE_BITBOARD >> (7-king_x)) ^ (1<<king_square);
+
+    let mut score: i16 = 0;
+    let inv_endgame = 1.0-endgame_weight;
+    
+    // open file penalties
+    // to the right
+    if king_x != 7{
+        if VERTICLE_SLICE_BITBOARD >> (7-king_x - 1) & friendly_piece_bitboard == 0{
+            score -= 20;
+        }
+    }
+
+    // to the left
+    if king_x != 0{
+        if VERTICLE_SLICE_BITBOARD >> (7-king_x + 1) & friendly_piece_bitboard == 0{
+            score -= 20;
+        }
+    }
+
+    // no close pawns penalty
+    let close_pawns_num: usize = (KING_MOVE_MASK[king_square as usize] & friendly_pawn_bitboard).count_ones() as usize;
+
+    score += PAWN_SHIELD_PENALTY[close_pawns_num];
+
+    // attack unit score
+    let mut attack_unit_num: u8 = 0;
+
+    // skip king and pawns
+    // loops through enemy pieces
+    for rel_piece_type in 1..5{
+        let attack_unit_bitboard : u64 = ind_piece_attack_squares[rel_piece_type + piece_offset] & king_zone;
+
+        attack_unit_num += attack_unit_bitboard.count_ones() as u8 * PIECE_ATTACK_UNIT[rel_piece_type - 1];
+    }
+
+    // penalty
+    score -= ATTACK_UNIT_TABLE[attack_unit_num as usize];
+
+    return int_float_mul(score, inv_endgame);
+} 
+
 pub fn get_board_score(board: &ChessBoard) -> i16{
     let mut score: i16 = 0;
+
+    let mut ind_piece_attack_squares: [u64; 12] = [0;12];
+
+    get_board_individual_attack_mask(board, &mut ind_piece_attack_squares);
+
+    let white_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[0..6]);
+    let black_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[6..12]);
 
     let endgame_weight : f32 = get_endgame_weight(board); 
 
     score += get_board_piece_value_score(board, endgame_weight);
+
     score += get_board_piece_square_score(board);
 
     // prioritises pawn near end nearer to endgame
     score += get_pawn_piece_square_score(board, endgame_weight);
 
-    // score += doubled_pawn_score(board);
-    // score += pawn_surrounding_score(board, endgame_weight);
-
-    score += get_attack_square_score(board, endgame_weight);
+    // incentivises control over center and piece mobility
+    score += get_attack_square_score(white_attack_bitboard, black_attack_bitboard, endgame_weight);
+    
 
     // prioritises king near center
     score += king_engame_square_weight(board, endgame_weight);
 
     // wants king to be closer to other king
     score += king_distance_weight(board, endgame_weight);
+
+    score += king_safety_score(board, true, &ind_piece_attack_squares, endgame_weight);
+    score -= king_safety_score(board, false, &ind_piece_attack_squares, endgame_weight);
 
     // bishop knight endgame - king square favours corners
     score += bishop_knight_endgame_bias(board, true, endgame_weight);
@@ -601,6 +671,5 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     }
     else{
         return -score;
-    }
-    
+    }   
 }
