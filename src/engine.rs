@@ -554,6 +554,20 @@ pub fn debug_print(s: &str, depth: u8){
         .expect("write failed");
 }
 
+pub fn discredit_score(score: i16) -> i16{
+    // probably a checkmate
+    if score < -9990 || score > 9990{
+        if score > 0{
+            return score - 1;
+        }
+        else{
+            return score + 1;
+        }
+    }
+
+    return score;
+}
+
 static mut node_counter: u32 = 0;
 const INF: i16 = 32767;
 
@@ -784,7 +798,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
-            transposition_table.add(chess_board.zobrist_hash, mvel_pair.score, depth, LOWER_BOUND);    
+            transposition_table.add(chess_board.zobrist_hash, discredit_score(mvel_pair.score), depth, LOWER_BOUND);    
             return mvel_pair;
         }
 
@@ -812,7 +826,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
 
     // only add entry if it is fully reliable
-    transposition_table.add(chess_board.zobrist_hash, best_mvel_pair.score, depth, TT_entry_type);    
+    transposition_table.add(chess_board.zobrist_hash, discredit_score(best_mvel_pair.score), depth, TT_entry_type);    
 
     return best_mvel_pair;
 }
