@@ -731,8 +731,12 @@ pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
     // flip the color for zobrist hash
     chess_board.zobrist_hash ^= BOARD_COLOR_HASH;
 
+    chess_board.attack_mask = 0;
+    chess_board.pin_mask = 0;
+    chess_board.check_mask = !0;
+
     // update_board_attack_mask(chess_board);
-    update_board(chess_board);
+    // update_board(chess_board);
 }
 
 pub fn get_board_individual_attack_mask(chess_board: &ChessBoard, attack_arr: &mut [u64; 12]){
@@ -1089,7 +1093,11 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
 
 pub fn update_board(chess_board: &mut ChessBoard){
     update_board_attack_mask(chess_board);
-    update_board_check_mask(chess_board);
+
+    if chess_board.check_mask == !0{
+        update_board_check_mask(chess_board);
+    }
+    
     update_board_pin_mask(chess_board);
 }
 
