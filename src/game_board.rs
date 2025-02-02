@@ -92,6 +92,10 @@ pub fn print_game_board_info(game_board: &GameChessBoard){
 
 pub fn print_game_tree(game_board: &GameChessBoard){
     println!("\n Zobrist Hash Table");
+    if game_board.game_tree.len() == 0{
+        println!("[EMPTY]");
+    }
+
     for (hash, counter) in &game_board.game_tree {
         println!("{}:{}", hash, counter);
     }

@@ -122,3 +122,26 @@ pub fn or_together(slice: &[u64]) -> u64{
 
     return final_bitboard;
 }
+
+pub fn get_move_line_string(move_line: &[u16; 32]) -> String{
+    let mut curr_string = "".to_string();
+
+    for index in 0..32{
+
+        // depth end
+        if move_line[index] == 0{
+            curr_string += &"Depth";
+            break;
+        }
+        
+        // tt end
+        if move_line[index] >= 0xF000{
+            curr_string += &format!("TT{}", move_line[index] & 0xFFF);
+            break;
+        }
+
+        curr_string += &(get_move_string(move_line[index]) + " ");
+    }
+
+    return curr_string.to_string();
+}

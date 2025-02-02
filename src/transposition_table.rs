@@ -15,19 +15,26 @@ pub struct TTEntry{
     pub score: i16,
     pub info: u8,
     pub visited: u8,
+    pub entry_type: u8,
 }
 
 impl TTEntry{
     pub fn new(score: i16, depth: u8, entry_type: u8) -> TTEntry{
-        TTEntry{score: score, info: depth | entry_type << 6, visited:0}
+        TTEntry{score:score, info:depth, visited: 0, entry_type: entry_type}
+
+        // TTEntry{score: score, info: depth | (entry_type << 6), visited:0}
+
+        // TTEntry{score: score, info: depth, visited: 0}
     }
 
     pub fn depth(&self) -> u8{
-        return self.info & INFO_DEPTH_MASK; 
+        return self.info;
+        // return self.info & INFO_DEPTH_MASK; 
     }
 
     pub fn entry_type(&self) -> u8{
-        return self.info >> 6;
+        // return self.info >> 6;
+        return self.entry_type;
     }
 }
 
@@ -37,6 +44,8 @@ const TT_SIZE: usize = 2 << 23;
 pub const UPPER_BOUND : u8 = 2;
 pub const LOWER_BOUND : u8 = 1;
 pub const EXACT_BOUND : u8 = 0;
+
+pub const REPITION_COUNT_HASHES : [u64; 4] = [0x0, 0x278C72C79F341B64, 0x45FB14AE2F9496D4, 0x5398422E049CBE50];
 
 #[derive(Clone)]
 pub struct TranspositionTable{
@@ -48,8 +57,10 @@ impl TranspositionTable{
         TranspositionTable {table: HashMap::new() }
     }
 
-    pub fn contains(&self, hash: &u64) -> bool{
-        return self.table.contains_key(hash);
+    pub fn contains(&self, hash: u64, position_repitition_count:u8) -> bool{
+        let true_hash = hash ^ REPITION_COUNT_HASHES[position_repitition_count as usize];
+
+        return self.table.contains_key(&true_hash);
     }
 
     pub fn get_mut(&mut self, hash: &u64) -> &mut TTEntry{
@@ -70,23 +81,30 @@ impl TranspositionTable{
         return self.size() as f32 / TT_SIZE as f32;
     }
 
-    pub fn add(&mut self, hash:u64, score:i16, depth:u8, node_type: u8){
+    pub fn add(&mut self, hash:u64, position_repitition_count:u8, score:i16, depth:u8, node_type: u8){
 
+
+        let true_hash = hash ^ REPITION_COUNT_HASHES[position_repitition_count as usize];
         // self.table.entry(hash).and_modify(TTEntry::new(score, depth)).or_insert(TTEntry::new(score, depth));
         // updating the balue
-        if self.table.contains_key(&hash){
-            let tt_entry: &mut TTEntry = self.table.get_mut(&hash).unwrap();
+        if self.table.contains_key(&true_hash){
+            let tt_entry: &mut TTEntry = self.table.get_mut(&true_hash).unwrap();
+            let tt_entry_depth: u8 = tt_entry.depth();
+
             
+
             tt_entry.score = score;
-            tt_entry.info = node_type << 6 | depth;
+            // tt_entry.info = node_type << 6 | depth;
+            tt_entry.info = depth;
 
             if tt_entry.visited < 255{
                 tt_entry.visited += 1;
             }
+               
         }
         else{
             self.table.insert(
-                hash,
+                true_hash,
                 TTEntry::new(score, depth, node_type),
             );
         }
