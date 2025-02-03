@@ -63,6 +63,14 @@ pub fn game_make_move(chess_board: &mut GameChessBoard, mv: u16){
     chess_board.move_limit += 1;
 }
 
+pub fn get_position_counter(game_tree: &HashMap<u64, u8>, hash: u64) -> u8{
+    if !game_tree.contains_key(&hash) {
+        return 0;
+    }
+
+    return *game_tree.get(&hash).unwrap();
+}
+
 pub fn add_to_game_tree(game_tree: &mut HashMap<u64, u8>, hash: u64) -> u8{
     // add hash if it is not already in game tree and increment if it is
     return *game_tree.entry(hash).and_modify(|counter| *counter += 1).or_insert(1);

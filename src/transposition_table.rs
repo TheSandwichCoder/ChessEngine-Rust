@@ -45,7 +45,7 @@ pub const UPPER_BOUND : u8 = 2;
 pub const LOWER_BOUND : u8 = 1;
 pub const EXACT_BOUND : u8 = 0;
 
-pub const REPITION_COUNT_HASHES : [u64; 4] = [0x0, 0x278C72C79F341B64, 0x45FB14AE2F9496D4, 0x5398422E049CBE50];
+pub const REPETITION_COUNT_HASHES : [u64; 4] = [0x0, 0x278C72C79F341B64, 0x45FB14AE2F9496D4, 0x5398422E049CBE50];
 
 #[derive(Clone)]
 pub struct TranspositionTable{
@@ -58,13 +58,19 @@ impl TranspositionTable{
     }
 
     pub fn contains(&self, hash: u64, position_repitition_count:u8) -> bool{
-        let true_hash = hash ^ REPITION_COUNT_HASHES[position_repitition_count as usize];
+        // if position_repitition_count as usize == 255{
+        //     return false;
+        // }
+
+        let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
 
         return self.table.contains_key(&true_hash);
     }
 
-    pub fn get_mut(&mut self, hash: &u64) -> &mut TTEntry{
-        return self.table.get_mut(hash).unwrap();;
+    pub fn get_mut(&mut self, hash: u64, position_repitition_count:u8) -> &mut TTEntry{
+        let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
+
+        return self.table.get_mut(&true_hash).unwrap();;
     }
 
     pub fn size(&self) -> usize{
@@ -84,7 +90,7 @@ impl TranspositionTable{
     pub fn add(&mut self, hash:u64, position_repitition_count:u8, score:i16, depth:u8, node_type: u8){
 
 
-        let true_hash = hash ^ REPITION_COUNT_HASHES[position_repitition_count as usize];
+        let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
         // self.table.entry(hash).and_modify(TTEntry::new(score, depth)).or_insert(TTEntry::new(score, depth));
         // updating the balue
         if self.table.contains_key(&true_hash){
