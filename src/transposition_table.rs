@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use crate::functions::*;
 
 // Entry Type:
 // 0 -> exact value
@@ -16,11 +17,12 @@ pub struct TTEntry{
     pub info: u8,
     pub visited: u8,
     pub entry_type: u8,
+    pub best_move: u16,
 }
 
 impl TTEntry{
-    pub fn new(score: i16, depth: u8, entry_type: u8) -> TTEntry{
-        TTEntry{score:score, info:depth, visited: 0, entry_type: entry_type}
+    pub fn new(score: i16, depth: u8, entry_type: u8, best_move: u16) -> TTEntry{
+        TTEntry{score:score, info:depth, visited: 0, entry_type: entry_type, best_move: best_move}
 
         // TTEntry{score: score, info: depth | (entry_type << 6), visited:0}
 
@@ -35,6 +37,18 @@ impl TTEntry{
     pub fn entry_type(&self) -> u8{
         // return self.info >> 6;
         return self.entry_type;
+    }
+
+    pub fn print_entry(&self){
+        println!(
+        "
+        score: {}
+        info: {}
+        depth: {}
+        visited: {}
+        type: {}
+        best move: {}
+        ",self.score, self.info, self.depth(), self.visited, self.entry_type, get_move_string(self.best_move));
     }
 }
 
@@ -70,7 +84,13 @@ impl TranspositionTable{
     pub fn get_mut(&mut self, hash: u64, position_repitition_count:u8) -> &mut TTEntry{
         let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
 
-        return self.table.get_mut(&true_hash).unwrap();;
+        return self.table.get_mut(&true_hash).unwrap();
+    }
+
+    pub fn get(&self, hash: u64, position_repitition_count: u8) -> &TTEntry{
+        let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
+
+        return self.table.get(&true_hash).unwrap();
     }
 
     pub fn size(&self) -> usize{
@@ -87,7 +107,7 @@ impl TranspositionTable{
         return self.size() as f32 / TT_SIZE as f32;
     }
 
-    pub fn add(&mut self, hash:u64, position_repitition_count:u8, score:i16, depth:u8, node_type: u8){
+    pub fn add(&mut self, hash:u64, position_repitition_count:u8, score:i16, depth:u8, node_type: u8, best_move: u16){
 
 
         let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
@@ -103,6 +123,8 @@ impl TranspositionTable{
             // tt_entry.info = node_type << 6 | depth;
             tt_entry.info = depth;
 
+            tt_entry.best_move = best_move;
+
             if tt_entry.visited < 255{
                 tt_entry.visited += 1;
             }
@@ -111,7 +133,7 @@ impl TranspositionTable{
         else{
             self.table.insert(
                 true_hash,
-                TTEntry::new(score, depth, node_type),
+                TTEntry::new(score, depth, node_type, best_move),
             );
         }
     }

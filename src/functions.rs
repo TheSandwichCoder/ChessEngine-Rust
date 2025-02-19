@@ -74,6 +74,28 @@ pub fn num_to_coord(square: u16) -> String{
     format!("{}{}", file_char, rank)
 }
 
+pub fn split(string: &str) -> Vec<String>{
+    let mut temp_string = "".to_string();
+
+    let mut vec = Vec::new();
+    for letter in string.trim().chars(){
+        if letter == ' '{
+            vec.push(temp_string.to_string());
+            temp_string = "".to_string();
+        }
+        else{
+            temp_string.push(letter);
+        }
+    }
+    if temp_string != ""{
+        vec.push(temp_string.to_string());
+    }
+
+    
+
+    return vec;
+}
+
 pub fn coord_to_number(coordinate: &str) -> u8 {
     // Ensure the input is exactly 2 characters long (e.g., A1, H8)
     if coordinate.len() != 2 {
@@ -126,6 +148,8 @@ pub fn or_together(slice: &[u64]) -> u64{
 pub fn get_move_line_string(move_line: &[u16; 32]) -> String{
     let mut curr_string = "".to_string();
 
+    println!("{:?}", move_line);
+
     for index in 0..32{
 
         // depth end
@@ -136,7 +160,7 @@ pub fn get_move_line_string(move_line: &[u16; 32]) -> String{
         
         // tt end
         if move_line[index] >= 0xF000{
-            curr_string += &format!("TT{}", move_line[index] & 0xFFF);
+            curr_string += &format!("E{}", move_line[index] & 0xFFF);
             break;
         }
 
@@ -144,4 +168,50 @@ pub fn get_move_line_string(move_line: &[u16; 32]) -> String{
     }
 
     return curr_string.to_string();
+}
+
+pub fn get_TT_line_string(move_line: &Vec<u16>) -> String{
+    let mut curr_string = "".to_string();
+
+    for mv in move_line{
+
+        curr_string += &(get_move_string(*mv) + " ");
+    }
+
+    return curr_string.to_string();
+}
+
+pub const MOVE_LINE_END : u16 = 0xF000 | 1;
+pub const MOVE_LINE_BETA_CUTOFF: u16 = 0xF000 | 2;
+pub const MOVE_LINE_BREAK : u16 = 0xF000 | 3;
+
+pub fn get_move_line_slice(move_line: &[u16; 32], mut index: usize) -> &[u16]{
+    let mut end_index = 63;
+
+    for i in index..32{
+        let move_val = move_line[i];
+        if move_val > 0xF000 || move_val == 0{
+            end_index = i;
+            break;
+        }
+    }
+
+    if end_index == 63{
+        println!("{:?}", move_line);
+    }
+
+    return &move_line[index..end_index];
+}
+
+pub fn add_to_move_line(move_line: &mut [u16; 32], mut index: usize, add_line: &Vec<u16>){
+    for mv in add_line{
+        if index == 32{
+            move_line[31] = MOVE_LINE_BREAK;
+            break;
+            // println!("i:{} line:{:?} len:{}", index, add_line, add_line.len());
+        }
+
+        move_line[index] = *mv;
+        index += 1;
+    }
 }
