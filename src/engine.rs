@@ -964,15 +964,13 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
                 return MoveScorePair::new(0, tt_entry.score, BASE_NODE_TYPE);
             }
 
-            // else if entry_type == LOWER_BOUND && tt_entry.score <= alpha{
-            //     move_line_array[ply as usize] = MOVE_LINE_TT;
-            //     return MoveScorePair::new(0, tt_entry.score);
-            // }
+            else if entry_type == LOWER_BOUND && tt_entry.score >= beta{
+                return MoveScorePair::new(0, tt_entry.score, CUT_NODE_TYPE);
+            }
 
-            // else if entry_type == UPPER_BOUND && tt_entry.score >= beta{
-            //     move_line_array[ply as usize] = MOVE_LINE_TT;
-            //     return MoveScorePair::new(0, tt_entry.score);
-            // }
+            else if entry_type == UPPER_BOUND && tt_entry.score <= alpha{
+                return MoveScorePair::new(0, tt_entry.score, CUT_NODE_TYPE);
+            }
             
             // // debug_print(&format!("TT LOOKUP fen{} s:{} tt-d:{}", board_to_fen(&sub_board), tt_entry.score, tt_entry.depth()), depth);            
         }
@@ -1085,7 +1083,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             }
 
             mvel_pair.score_type = CUT_NODE_TYPE;
-            // transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(mvel_pair.score), depth, LOWER_BOUND, get_move_line_slice(move_line_array, ply as usize));
+            transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
             return mvel_pair;
         }
 

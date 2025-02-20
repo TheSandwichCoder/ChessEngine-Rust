@@ -109,11 +109,11 @@ impl TranspositionTable{
 
     pub fn add(&mut self, hash:u64, position_repitition_count:u8, score:i16, depth:u8, node_type: u8, best_move: u16){
 
-
         let true_hash = hash ^ REPETITION_COUNT_HASHES[position_repitition_count as usize];
         // self.table.entry(hash).and_modify(TTEntry::new(score, depth)).or_insert(TTEntry::new(score, depth));
         // updating the balue
         if self.table.contains_key(&true_hash){
+
             let tt_entry: &mut TTEntry = self.table.get_mut(&true_hash).unwrap();
             let tt_entry_depth: u8 = tt_entry.depth();
 
@@ -122,6 +122,7 @@ impl TranspositionTable{
             tt_entry.score = score;
             // tt_entry.info = node_type << 6 | depth;
             tt_entry.info = depth;
+            tt_entry.entry_type = node_type;
 
             tt_entry.best_move = best_move;
 
