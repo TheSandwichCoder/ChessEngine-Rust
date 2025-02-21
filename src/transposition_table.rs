@@ -124,7 +124,9 @@ impl TranspositionTable{
             tt_entry.info = depth;
             tt_entry.entry_type = node_type;
 
-            tt_entry.best_move = best_move;
+            if node_type == EXACT_BOUND{
+                tt_entry.best_move = best_move;
+            }
 
             if tt_entry.visited < 255{
                 tt_entry.visited += 1;

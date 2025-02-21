@@ -20,12 +20,12 @@ use crate::timer::Timer;
 pub struct MoveScorePair{
     pub mv: u16,
     pub score: i16,
-    pub score_type: u8,
+    pub is_exact: bool,
 }
 
 impl MoveScorePair {
-    fn new(mv: u16, score: i16, score_type: u8) -> MoveScorePair {
-        MoveScorePair { mv, score, score_type }
+    fn new(mv: u16, score: i16, is_exact: bool) -> MoveScorePair {
+        MoveScorePair { mv, score, is_exact }
     }
 }
 
@@ -36,7 +36,7 @@ impl Neg for MoveScorePair {
         Self {
             mv: self.mv,
             score: -self.score,
-            score_type: self.score_type,
+            is_exact: self.is_exact,
         }
     }
 }
@@ -490,7 +490,7 @@ pub fn debug(game_board: &mut GameChessBoard){
 
             let best_move: MoveScorePair = get_best_move(game_board, think_time);
 
-            println!("evaluation: {} score: {} move line: {}", get_move_string(best_move.mv), best_move.score, get_TT_line_string(&get_move_line(game_board)));
+            println!("evaluation: {} score: {} move line: {}", get_move_string(best_move.mv), best_move.score, get_move_line_vec_string(&get_move_line(game_board)));
         }
 
         else if input_string == "move sequence"{
@@ -629,7 +629,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), 0, false, &mut "".to_string());
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)));
         }
         else if flag == 1{
             unsafe{
@@ -775,10 +775,14 @@ static mut CURR_SEARCH_DEPTH : u8 = 0;
 pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> MoveScorePair{
     // unsafe{CURR_SEARCH_DEPTH = depth;}
 
-    return iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
+    let best_move = iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
+
+    println!("{}", get_move_line_vec_string(&get_move_line(game_chess_board)));
+    return best_move;
 }
 
-pub const BASE_NODE_TYPE: u8 = 0;
+pub const SCORE_EXACT_TYPE: bool = true;
+pub const SCORE_NOT_EXACT_TYPE: bool = false;
 
 pub const EVAL_NODE_TYPE: u8 = 1;
 pub const CUT_NODE_TYPE : u8 = 2;
@@ -792,7 +796,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
-    let mut best_mvel = MoveScorePair::new(0, -INF, BASE_NODE_TYPE);
+    let mut best_mvel = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
     let mut alpha : i16 = -INF;
     let mut beta : i16 = INF;
@@ -814,20 +818,16 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
     // let mut move_line_array:[u16; 32] = [0; 32];
 
-    let mut log_string : String = "".to_string();
-
     while curr_depth < MAX_SEARCH_DEPTH{
 
         unsafe{CURR_SEARCH_DEPTH = curr_depth;}
 
         // debug_print(&"{", curr_depth);
-        debug_log_str(&mut log_string, &"{", 0);
-
         if timer.time_out(){
             break;
         }
         // Search Starts here
-        let mut best_mvel_search_pair : MoveScorePair = MoveScorePair::new(0, -INF, BASE_NODE_TYPE);
+        let mut best_mvel_search_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
         // for mv_weight_pair in &move_vec_sorted{
         //     print!("{}:{},", get_move_string(mv_weight_pair.mv), mv_weight_pair.weight);
@@ -845,8 +845,8 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            // mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer, &mut move_line_array);
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -INF, INF, &timer, mv_weight_pair.mv, false, &mut log_string);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer);
+            // mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -INF, INF, &timer);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
             // println!("{} {} a:{}",get_move_string(mv), mvel_pair.score, alpha);
@@ -860,7 +860,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             mv_weight_pair.weight = mvel_pair.score;
 
-            println!("score: {}", mvel_pair.score);
+            // println!("score: {}", mvel_pair.score);
 
             if mvel_pair.score > best_mvel_search_pair.score{
                 best_mvel_search_pair.score = mvel_pair.score;
@@ -873,8 +873,6 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
                 }
             }
         }
-        
-        debug_log_str(&mut log_string, &"}", 0);
         // Move Search Ends here
 
 
@@ -909,8 +907,6 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
         }
     }
 
-    add_log(&log_string);
-
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash);
     transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(best_mvel.score), curr_depth, EXACT_BOUND, best_mvel.mv);
 
@@ -922,7 +918,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 pub const MOVE_LINE_END : u16 = 0xF000 | 1;
 pub const BETA_CUTOFF: u16 = 0xF000 | 2;
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer, recent_move: u16, log_info: bool, log_string: &mut String) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash) - 1;
     
     // if chess_board_repetition == 0{
@@ -934,74 +930,37 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         let tt_entry: &mut TTEntry = transposition_table.get_mut(chess_board.zobrist_hash, chess_board_repetition);
         
         // larger / equal search
-        // change here
-        if tt_entry.depth() >= depth{
-            // if tt_entry.depth() == 0{
-            //     println!("tt:{} score:{}",tt_entry.score, get_board_score(chess_board));
-            // }
-            
-            
-            let entry_type = tt_entry.entry_type();
+        if tt_entry.info >= depth{
+            let entry_type = tt_entry.entry_type;
 
             if tt_entry.visited < 255{
                 tt_entry.visited += 1;
             }
 
             if entry_type == EXACT_BOUND{
-                // make a TT entry
-
-                // move_line_array[ply as usize] = tt_entry.depth() as u16 | 0xF000;
-
-                // print_board(chess_board);
-                // println!("depth: {}", tt_entry.depth());
-                // println!("{}",get_TT_line_string(&tt_entry.move_line));
-                // add_to_move_line(move_line_array, ply as usize, &tt_entry.move_line);
-
-                if log_info{
-                    debug_log_str(log_string, &format!("({},{},{},{})", TT_NODE_TYPE, tt_entry.score, get_move_string(recent_move),chess_board.zobrist_hash), ply);
-                }
-
-                return MoveScorePair::new(0, tt_entry.score, BASE_NODE_TYPE);
+                return MoveScorePair::new(0, tt_entry.score, SCORE_EXACT_TYPE);
             }
 
             else if entry_type == LOWER_BOUND && tt_entry.score >= beta{
-                return MoveScorePair::new(0, tt_entry.score, CUT_NODE_TYPE);
+                return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
             }
 
-            else if entry_type == UPPER_BOUND && tt_entry.score <= alpha{
-                return MoveScorePair::new(0, tt_entry.score, CUT_NODE_TYPE);
-            }
-            
-            // // debug_print(&format!("TT LOOKUP fen{} s:{} tt-d:{}", board_to_fen(&sub_board), tt_entry.score, tt_entry.depth()), depth);            
+            // else if entry_type == UPPER_BOUND && tt_entry.score <= alpha{
+            //     return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
+            // }
         }
     }
     
     unsafe{
-        // if depth == 0 || ply >= CURR_SEARCH_DEPTH + MAX_SEARCH_EXTENSION{
-
         if depth == 0{
-            // unsafe{node_counter += 1;}
-            
-            // let board_score = get_board_score(chess_board);
-
-            // return MoveScorePair::new(0, board_score);
-            // move_line_array[ply as usize] = MOVE_LINE_END;
             let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
-
-            if log_info{
-                debug_log_str(log_string, &format!("({},{},{},{})", EVAL_NODE_TYPE, qsearch_score.score, get_move_string(recent_move), chess_board.zobrist_hash), ply);
-            }
-
             return qsearch_score;
         }
     }
     
     // debug_print(&format!("--NEW SEARCH d:{}--", depth), depth);
 
-    // we subtract one since it was added in the previous iteration
-    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, BASE_NODE_TYPE);
-    // let mut new_move_line_array: [u16; 32] = move_line_array.clone();
-    // let mut new_move_line_array = [0; 32];
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
     // upper bound
     let mut tt_entry_type: u8 = UPPER_BOUND;
@@ -1042,7 +1001,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             return best_mvel_pair;
         }
         let mut sub_board: ChessBoard = chess_board.clone();
-        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, BASE_NODE_TYPE);
+        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
         // let search_extention = get_search_extention(chess_board, mv_weight_pair);
 
@@ -1055,11 +1014,11 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
         // position repetition check
         if counter >= 3{
-            mvel_pair = MoveScorePair::new(0, 0, 0);
+            mvel_pair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer, mv_weight_pair.mv, log_info, log_string);   
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer);   
         }
 
         
@@ -1067,22 +1026,11 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         // println!("mvel pair score: {}", mvel_pair.score);
 
         if mvel_pair.score >= beta{
-            
-            // debug_print(&"BETA CUTOFF", depth);
-            
-            
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
             let ply_usize = ply as usize;
-            
-            // new_move_line_array[ply_usize] = BETA_CUTOFF;
-            // move_line_array[ply_usize..].copy_from_slice(&new_move_line_array[ply_usize..]);
 
-            if log_info{
-                debug_log_str(log_string, &format!("({},{},{},{})", CUT_NODE_TYPE, mvel_pair.score, get_move_string(recent_move), sub_board.zobrist_hash), ply);
-            }
-
-            mvel_pair.score_type = CUT_NODE_TYPE;
+            mvel_pair.is_exact = SCORE_NOT_EXACT_TYPE;
             transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
             return mvel_pair;
         }
@@ -1093,15 +1041,17 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             // debug_print(&format!("NEW BEST d:{}", depth), depth);
 
             let ply_usize = ply as usize;
-            
-            // update the move line 
-            // new_move_line_array[ply_usize] = mv;
-            // move_line_array[ply_usize..].copy_from_slice(&new_move_line_array[ply_usize..]);
-            // *move_line_array = new_move_line_array;
 
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
-            best_mvel_pair.score_type = mvel_pair.score_type;
+            best_mvel_pair.is_exact = mvel_pair.is_exact;
+
+            // if mvel_pair.is_exact{
+            //     tt_entry_type = EXACT_BOUND;
+            // }
+            // else{
+            //     tt_entry_type = UPPER_BOUND;
+            // }
             // tt_entry_type = EXACT_BOUND;
 
             if best_mvel_pair.score > alpha{
@@ -1117,12 +1067,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // debug_print(&format!("TT WRITE fen{} s:{} d:{}", board_to_fen(&chess_board), best_mvel_pair.score, depth), depth);
     // debug_print(&format!("RETURN BEST mv{} s:{} d:{}", get_move_string(best_mvel_pair.mv), best_mvel_pair.score, depth), depth);
     
-    if best_mvel_pair.score_type != CUT_NODE_TYPE{
+    if best_mvel_pair.is_exact{
         transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
-    }
-    
-    if log_info{
-        debug_log_str(log_string, &format!("({},{},{},{})", BASE_NODE_TYPE, best_mvel_pair.score, get_move_string(recent_move), chess_board.zobrist_hash), ply);
     }
 
     return best_mvel_pair;
@@ -1132,7 +1078,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
     let stand_pat = get_board_score(chess_board);
 
     if stand_pat >= beta{
-        return MoveScorePair::new(0, beta, BASE_NODE_TYPE);
+        return MoveScorePair::new(0, beta, SCORE_EXACT_TYPE);
     }
         
     if alpha < stand_pat{
@@ -1140,7 +1086,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
     }
         
     
-    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, BASE_NODE_TYPE);
+    let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
     // upper bound
     let mut move_vec_unsorted: Vec<u16> = Vec::new();
@@ -1150,7 +1096,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
     // no legal moves
     if move_vec_unsorted.len() == 0 || depth == 0{
         unsafe{node_counter += 1;}
-        return MoveScorePair::new(0, get_board_score(chess_board), BASE_NODE_TYPE);
+        return MoveScorePair::new(0, get_board_score(chess_board), SCORE_EXACT_TYPE);
     }
 
     let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
@@ -1160,7 +1106,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
         let mv = mv_weight_pair.mv;
 
         let mut sub_board: ChessBoard = chess_board.clone();
-        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, BASE_NODE_TYPE);
+        let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
         make_move(&mut sub_board, mv);
         

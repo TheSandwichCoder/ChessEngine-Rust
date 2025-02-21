@@ -170,7 +170,7 @@ pub fn get_move_line_string(move_line: &[u16; 32]) -> String{
     return curr_string.to_string();
 }
 
-pub fn get_TT_line_string(move_line: &Vec<u16>) -> String{
+pub fn get_move_line_vec_string(move_line: &Vec<u16>) -> String{
     let mut curr_string = "".to_string();
 
     for mv in move_line{
