@@ -18,5 +18,6 @@ pub const QUIESCENCE_DEPTH_LIMIT: u8 = 20;
 pub const BATTLE_DEPTH: u8 = 5;
 pub const BATTLE_THINK_TIME: u16 = 200;
 pub const MAX_SEARCH_EXTENSION: u8 = 2;
+pub const TRANSPOSITION_TABLE_SIZE: usize = 1 << 22;
 
 pub const MOVE_LIMIT_MAX : u16 = 400;
