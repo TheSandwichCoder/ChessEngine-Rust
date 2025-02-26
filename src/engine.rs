@@ -550,8 +550,10 @@ pub fn debug(game_board: &mut GameChessBoard){
 
             let rep_count: u8 = input_string.trim().parse().expect("cannot parse string to int");
 
-            if game_board.transposition_table.contains(zob_hash, rep_count){
-                let tt_entry = game_board.transposition_table.get(zob_hash, rep_count);
+            let true_hash = zob_hash ^ REPETITION_COUNT_HASHES[rep_count as usize]; 
+
+            if game_board.transposition_table.contains(true_hash){
+                let tt_entry = game_board.transposition_table.get(true_hash);
 
                 tt_entry.print_entry();
             }
@@ -629,7 +631,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)));
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)),0, false);
         }
         else if flag == 1{
             unsafe{
@@ -652,7 +654,9 @@ pub fn get_move_line(game_chess_board: &GameChessBoard) -> Vec<u16>{
 
     let chess_board_repetition: u8 = get_position_counter(&game_chess_board.game_tree, chess_board_copy.zobrist_hash);
 
-    let starting_tt: &TTEntry = game_chess_board.transposition_table.get(chess_board_copy.zobrist_hash, chess_board_repetition);
+    let true_hash = chess_board_copy.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
+
+    let starting_tt = game_chess_board.transposition_table.get(true_hash);
 
     make_move(&mut chess_board_copy, starting_tt.best_move);
 
@@ -661,8 +665,8 @@ pub fn get_move_line(game_chess_board: &GameChessBoard) -> Vec<u16>{
     for i in 0..starting_tt.depth()-1{
         let chess_board_repetition: u8 = get_position_counter(&game_chess_board.game_tree, chess_board_copy.zobrist_hash);
 
-        if game_chess_board.transposition_table.contains(chess_board_copy.zobrist_hash, 0){
-            let tt_entry: &TTEntry = game_chess_board.transposition_table.get(chess_board_copy.zobrist_hash, 0);
+        if game_chess_board.transposition_table.contains(chess_board_copy.zobrist_hash){
+            let tt_entry = game_chess_board.transposition_table.get(chess_board_copy.zobrist_hash);
 
             make_move(&mut chess_board_copy, tt_entry.best_move);
             move_line_vec.push(tt_entry.best_move);
@@ -833,7 +837,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer, mv, curr_depth == 10);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -889,7 +893,10 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     }
 
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash);
-    transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(best_mvel.score), curr_depth, EXACT_BOUND, best_mvel.mv);
+
+    let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
+
+    transposition_table.add(true_hash, discredit_score(best_mvel.score), curr_depth, EXACT_BOUND, best_mvel.mv);
 
     println!("{}%", transposition_table.capacity() * 100.0);
 
@@ -899,23 +906,22 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 pub const MOVE_LINE_END : u16 = 0xF000 | 1;
 pub const BETA_CUTOFF: u16 = 0xF000 | 2;
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer, previous_mv: u16, should_log: bool) -> MoveScorePair{
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash) - 1;
     
-    // if chess_board_repetition == 0{
-    //     println!("{}", chess_board_repetition);
-    //     print_board(chess_board);
-    // }
+    let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
+    
 
-    if transposition_table.contains(chess_board.zobrist_hash, chess_board_repetition){
-        let tt_entry: &mut TTEntry = transposition_table.get_mut(chess_board.zobrist_hash, chess_board_repetition);
-        
+    let tt_entry = transposition_table.get(true_hash);
+
+    // extra check to make sure we have a valid collision
+    if tt_entry.hash == true_hash{
         // larger / equal search
-        if tt_entry.info >= depth{
-            let entry_type = tt_entry.entry_type;
+        if tt_entry.depth() >= depth{
+            let entry_type = tt_entry.entry_type();
 
-            if tt_entry.visited < 255{
-                tt_entry.visited += 1;
+            if should_log{
+                debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(previous_mv), true_hash), depth);
             }
 
             if entry_type == EXACT_BOUND{
@@ -930,14 +936,18 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
                 return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
             }
         }
+    }  
+    
+    
+    if depth == 0{
+        
+        let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
+        if should_log{
+            debug_log(&format!("({},{},{},{})", 1, qsearch_score.score, get_move_string(previous_mv), true_hash), depth);
+        }
+        return qsearch_score;
     }
     
-    unsafe{
-        if depth == 0{
-            let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
-            return qsearch_score;
-        }
-    }
     
     // debug_print(&format!("--NEW SEARCH d:{}--", depth), depth);
 
@@ -960,9 +970,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         // checkmate
         else{
             // shift the checkmate so closer checkmates are preffered
-            unsafe{
-                best_mvel_pair.score = -10000 + ((CURR_SEARCH_DEPTH - depth) as i16);
-            }
+            best_mvel_pair.score = -10000 + ply as i16;
+            
         }
 
         return best_mvel_pair
@@ -990,7 +999,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer);   
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer, mv, should_log);   
         }
 
         if mvel_pair.score >= beta{
@@ -999,7 +1008,10 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             let ply_usize = ply as usize;
 
             mvel_pair.is_exact = SCORE_NOT_EXACT_TYPE;
-            transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
+            transposition_table.add(true_hash, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
+            if should_log{
+                debug_log(&format!("({},{},{},{})", 2, mvel_pair.score, get_move_string(previous_mv), true_hash), depth);
+            }
             return mvel_pair;
         }
 
@@ -1010,10 +1022,6 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             best_mvel_pair.score = mvel_pair.score;
             best_mvel_pair.mv = mv;
             best_mvel_pair.is_exact = mvel_pair.is_exact;
-            // else{
-            //     tt_entry_type = UPPER_BOUND;
-            // }
-            // tt_entry_type = EXACT_BOUND;
 
             if best_mvel_pair.score > alpha{
                 alpha = mvel_pair.score;
@@ -1025,11 +1033,12 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         remove_from_game_tree(game_tree, sub_board.zobrist_hash);
     }
 
-    // debug_print(&format!("TT WRITE fen{} s:{} d:{}", board_to_fen(&chess_board), best_mvel_pair.score, depth), depth);
-    // debug_print(&format!("RETURN BEST mv{} s:{} d:{}", get_move_string(best_mvel_pair.mv), best_mvel_pair.score, depth), depth);
-    
     if best_mvel_pair.is_exact{
-        transposition_table.add(chess_board.zobrist_hash, chess_board_repetition, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
+        transposition_table.add(true_hash, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
+    }
+
+    if should_log{
+        debug_log(&format!("({},{},{},{})", 0, best_mvel_pair.score, get_move_string(previous_mv), true_hash), depth);
     }
 
     return best_mvel_pair;
@@ -1056,7 +1065,9 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
 
     // no legal moves
     if move_vec_unsorted.len() == 0 || depth == 0{
-        unsafe{node_counter += 1;}
+        unsafe{
+            node_counter += 1;
+        }
         return MoveScorePair::new(0, get_board_score(chess_board), SCORE_EXACT_TYPE);
     }
 

@@ -43,6 +43,8 @@ pub fn fen_to_GameChessBoard(s: &str) -> GameChessBoard{
         move_limit: 0,
     };
 
+    add_to_game_tree(&mut game_board.game_tree, game_board.board.zobrist_hash);
+
     return game_board;
 }
 
