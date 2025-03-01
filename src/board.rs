@@ -20,6 +20,7 @@
 use crate::move_compute::*;
 use crate::functions::*;
 use crate::zobrist_hash::*;
+use crate::app_settings::DEFAULT_FEN;
 
 const PIECE_TYPE_STRING: &str = "PBNRQKpbnrqk/";
 
@@ -272,6 +273,11 @@ pub fn fen_to_board(fen_string: &str) -> ChessBoard{
                 counter += p.to_digit(10).unwrap() as i32;
             }
             else{
+                if !in_string(PIECE_TYPE_STRING, p){
+                    println!("FAILED TO PARSE");
+                    return fen_to_board(DEFAULT_FEN);
+                }
+
                 let piece_array_index: i32 = PIECE_TYPE_STRING.chars().position(|c| c == p).unwrap() as i32;
 
                 // '/' character
@@ -1092,7 +1098,10 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
 }
 
 pub fn update_board(chess_board: &mut ChessBoard){
-    update_board_attack_mask(chess_board);
+
+    if chess_board.attack_mask == 0{
+        update_board_attack_mask(chess_board);
+    }
 
     if chess_board.check_mask == !0{
         update_board_check_mask(chess_board);

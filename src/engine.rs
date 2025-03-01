@@ -653,24 +653,24 @@ pub fn position_bench(flag: u8){
     for fen_pos in fen_pos_array{
         let mut game_board : GameChessBoard = fen_to_GameChessBoard(&fen_pos);
         
-        unsafe{node_counter = 0;}
+        let mut node_counter = 0;
 
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)));
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter);
         }
         else if flag == 1{
-            unsafe{
-                node_counter = perft(&mut game_board.board, 5);
-            }
+            
+            node_counter = perft(&mut game_board.board, 5);
+            
         }
 
         let time_taken = t_start.elapsed().as_millis();
 
-        unsafe{
-            println!("test: {} took: {}ms nds:{} nds/s: {}", fen_pos, time_taken, node_counter, node_counter as u128 /time_taken * 1000);
-        }
+        
+        println!("test: {} took: {}ms nds:{} nds/s: {}", fen_pos, time_taken, node_counter, node_counter as u128 /time_taken * 1000);
+        
     }
 }
 
@@ -709,20 +709,19 @@ pub fn get_move_line(game_chess_board: &GameChessBoard) -> Vec<u16>{
     return move_line_vec;
 }
 
-pub fn debug_print(s: &str, depth: u8){
+pub fn debug_print(s: &str, ply: u8){
     // Open a file with append option
     let mut data_file = fs::OpenOptions::new()
         .append(true)
         .open("debug.txt")
         .expect("cannot open file");
 
-    unsafe{
-        for i in 0..(CURR_SEARCH_DEPTH-depth){
-            data_file
-            .write(b"\t")
-            .expect("write failed");
-        }
+    for i in 0..ply{
+        data_file
+        .write(b"\t")
+        .expect("write failed");
     }
+
     
     
     // Write to a file
@@ -752,20 +751,19 @@ pub fn add_log(logs: &str){
         .expect("write failed");
 }
 
-pub fn debug_log(logs: &str,  depth: u8){
+pub fn debug_log(logs: &str,  ply: u8){
     // Open a file with append option
     let mut data_file = fs::OpenOptions::new()
         .append(true)
         .open("debug.txt")
         .expect("cannot open file");
 
-    unsafe{
-        for i in 0..(CURR_SEARCH_DEPTH-depth){
-            data_file
-            .write(b">")
-            .expect("write failed");
-        }
+    for i in 0..ply{
+        data_file
+        .write(b">")
+        .expect("write failed");
     }
+    
     
     
     // Write to a file
@@ -798,14 +796,9 @@ pub fn get_search_extention(board: &ChessBoard, mv_weight_pair: MoveWeightPair) 
 
 }
 
-static mut node_counter: u32 = 0;
 const INF: i16 = 32767;
 
-static mut CURR_SEARCH_DEPTH : u8 = 0;
-
 pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> MoveScorePair{
-    // unsafe{CURR_SEARCH_DEPTH = depth;}
-
     let best_move = iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
 
     // println!("{}", get_move_line_vec_string(&get_move_line(game_chess_board)));
@@ -836,6 +829,8 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
     let mut move_vec_unsorted: Vec<u16> = Vec::new();
 
+    let mut node_counter = 0;
+
     get_moves(chess_board, &mut move_vec_unsorted);
 
     let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
@@ -843,8 +838,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
 
     while curr_depth < MAX_SEARCH_DEPTH{
-
-        unsafe{CURR_SEARCH_DEPTH = curr_depth;}
+        node_counter = 0;
 
         // debug_print(&"{", curr_depth);
         if timer.time_out(){
@@ -864,7 +858,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer, &mut node_counter);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -900,14 +894,13 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
             alpha = -INF;
         }
         else{
-            // move was null
+            // move was not null
             if best_mvel_search_pair.mv != 0{
                 
                 best_mvel = best_mvel_search_pair;
-                unsafe{
-                    println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {} eval: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv), best_mvel.score);
-                    node_counter = 0;
-                }
+
+                println!("DEPTH SEARCHED TO {} a:{} b:{} nodes:{} best move: {} eval: {}",curr_depth, alpha, beta, node_counter, get_move_string(best_mvel.mv), best_mvel.score);
+
                 alpha = -INF;
                 beta = INF;
 
@@ -933,7 +926,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 pub const MOVE_LINE_END : u16 = 0xF000 | 1;
 pub const BETA_CUTOFF: u16 = 0xF000 | 2;
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32) -> MoveScorePair{
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash) - 1;
     
     let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
@@ -963,7 +956,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     
     if depth == 0{
-        
+        *node_counter += 1;
         let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
 
         return qsearch_score;
@@ -973,6 +966,14 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // debug_print(&format!("--NEW SEARCH d:{}--", depth), depth);
 
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
+
+    // check every 2048 nodes if our time runs out
+    // heavily inspired by the blunder engine
+    if (*node_counter & 2047) == 0{
+        if timer.time_out(){
+            return best_mvel_pair;
+        }
+    }
 
     // upper bound
     let mut tt_entry_type: u8 = UPPER_BOUND;
@@ -1003,10 +1004,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     for mv_weight_pair in move_vec_sorted{
         let mv = mv_weight_pair.mv;
-
-        if timer.time_out(){
-            return best_mvel_pair;
-        }
+        
         let mut sub_board: ChessBoard = chess_board.clone();
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
@@ -1020,7 +1018,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer);   
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer, node_counter);   
         }
 
         if mvel_pair.score >= beta{
@@ -1081,9 +1079,6 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
 
     // no legal moves
     if move_vec_unsorted.len() == 0 || depth == 0{
-        unsafe{
-            node_counter += 1;
-        }
         return MoveScorePair::new(0, get_board_score(chess_board), SCORE_EXACT_TYPE);
     }
 

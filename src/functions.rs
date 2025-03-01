@@ -91,10 +91,18 @@ pub fn split(string: &str) -> Vec<String>{
         vec.push(temp_string.to_string());
     }
 
-    
-
     return vec;
 }
+
+pub fn in_string(string: &str, target: char) -> bool {
+    for character in string.chars() {
+        if character == target {
+            return true;
+        }
+    }
+    false
+}
+
 
 pub fn coord_to_number(coordinate: &str) -> u8 {
     // Ensure the input is exactly 2 characters long (e.g., A1, H8)
