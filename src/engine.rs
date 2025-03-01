@@ -75,6 +75,11 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i16{
         }
     }
 
+    // going to an attacked square
+    if board.attack_mask & (1 << to_square) != 0{
+        weight -= 1;
+    }
+
     return weight;
 }
 
