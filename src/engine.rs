@@ -987,6 +987,14 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     get_moves(chess_board, &mut move_vec_unsorted);
 
+    // if search_extention_counter < MAX_SEARCH_EXTENSION{
+    //     if chess_board.check_mask != 0{
+    //         search_extention_counter += 1;
+    //         depth += 1;
+    //     }
+    // }
+    
+
     // no legal moves
     if move_vec_unsorted.len() == 0{
         // stalemate

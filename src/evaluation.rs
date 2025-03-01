@@ -380,8 +380,8 @@ const HORIZONTAL_SLICE_BITBOARD : u64 = 0xFF00000000000000;
 const VERTICLE_SLICE_BITBOARD : u64 = 0x8080808080808080;
 const HALF_SLICE_BITBOARD: u64 = (!0)<<32;
 
-pub fn doubled_pawn_score(board: &ChessBoard) -> i16{
-    let mut score : i16 = 0;
+pub fn doubled_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+    let mut score : f32 = 0.0;
 
     let white_pawn_bitboard = board.piece_bitboards[0];
     let black_pawn_bitboard = board.piece_bitboards[6];
@@ -389,16 +389,16 @@ pub fn doubled_pawn_score(board: &ChessBoard) -> i16{
     for x in 0..8{
         // white doubled pawns
         if (white_pawn_bitboard & (VERTICLE_SLICE_BITBOARD >> (7-x))).count_ones() > 1{
-            score -= 20;
+            score -= 10. * endgame_weight;
         }
 
         // black doubled pawns
         if (black_pawn_bitboard & (VERTICLE_SLICE_BITBOARD >> (7-x))).count_ones() > 1{
-            score += 20;
+            score += 10. * endgame_weight;
         }
     }
     
-    return score;
+    return score as i16
 }
 
 pub fn get_vert_side_bitboards(x: u8) -> u64{
@@ -416,13 +416,16 @@ pub fn get_vert_side_bitboards(x: u8) -> u64{
 
 // pass pawn, isolated pawn, 
 pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
-    let mut white_pawn_bitboard : u64 = board.piece_bitboards[0];
-    let mut black_pawn_bitboard: u64 = board.piece_bitboards[6];
+    let white_pawn_bitboard : u64 = board.piece_bitboards[0];
+    let black_pawn_bitboard: u64 = board.piece_bitboards[6];
+
+    let mut white_pawn_temp = white_pawn_bitboard;
+    let mut black_pawn_temp = black_pawn_bitboard;
 
     let mut score: i16 = 0;
 
-    while white_pawn_bitboard != 0{
-        let pawn_square : usize = white_pawn_bitboard.trailing_zeros() as usize;
+    while white_pawn_temp != 0{
+        let pawn_square : usize = white_pawn_temp.trailing_zeros() as usize;
         
         let pawn_x : u8 = pawn_square as u8 % 8;
         let pawn_y : u8 = pawn_square as u8 / 8;
@@ -434,24 +437,31 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
         // println!("{}", pawn_x);
         // print_bitboard(side_pawn_bitboard);
 
-        // accompanied pawn
-        if side_pawn_bitboard & board.piece_bitboards[0] != 0{
+        let is_accompanied = side_pawn_bitboard & white_pawn_bitboard != 0;
+        let is_supported = BLACK_PAWN_ATTACK_MASK[pawn_square] & white_pawn_bitboard != 0;
+        let is_pass = (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[6] == 0;
+
+        // if is_accompanied{
+        //     score += 5;
+        // }
+
+        // if is_pass{
+        //     score += 5
+        // }
+
+        // if is_supported{
+        //     score += 10;
+        // }
+
+        if is_supported && is_pass{
             score += 10;
         }
-        else{ // lonely pawn
-            score -= 15;
-        }
 
-        // passed pawn
-        if (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[6] == 0{
-            score += 30;
-        }
-
-        white_pawn_bitboard ^= 1 << pawn_square;
+        white_pawn_temp ^= 1 << pawn_square;
     }
 
-    while black_pawn_bitboard != 0{
-        let pawn_square : usize = black_pawn_bitboard.trailing_zeros() as usize;
+    while black_pawn_temp != 0{
+        let pawn_square : usize = black_pawn_temp.trailing_zeros() as usize;
         
         let pawn_x : u8 = pawn_square as u8 % 8;
         let pawn_y : u8 = pawn_square as u8 / 8;
@@ -460,20 +470,27 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
 
         let side_pawn_bitboard: u64 = get_vert_side_bitboards(pawn_x);
 
-        // accompanied pawn
-        if side_pawn_bitboard & board.piece_bitboards[6] != 0{
+        let is_accompanied = side_pawn_bitboard & black_pawn_bitboard != 0;
+        let is_supported = WHITE_PAWN_ATTACK_MASK[pawn_square] & black_pawn_bitboard != 0;
+        let is_pass = (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[0] == 0;
+
+        // if is_accompanied{
+        //     score -= 5;
+        // }
+
+        // if is_pass{
+        //     score -= 5
+        // }
+
+        // if is_supported{
+        //     score -= 10;
+        // }
+
+        if is_accompanied && is_pass{
             score -= 10;
         }
-        else{ // lonely pawn
-            score += 15;
-        }
 
-        // passed pawn
-        if (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[0] == 0{
-            score -= 30;
-        }
-
-        black_pawn_bitboard ^= 1 << pawn_square;
+        black_pawn_temp ^= 1 << pawn_square;
     }
 
     return (score as f32 * endgame_weight) as i16;
@@ -664,6 +681,9 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     // bishop knight endgame - king square favours corners
     score += bishop_knight_endgame_bias(board, true, endgame_weight);
     score += bishop_knight_endgame_bias(board, false, endgame_weight);
+
+    // doubled pawn penalty
+    score += doubled_pawn_score(board, endgame_weight);
 
     // relative evaluation due to negamax
     if board.board_color{
