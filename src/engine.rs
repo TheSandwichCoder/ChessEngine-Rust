@@ -777,9 +777,12 @@ pub fn debug_log(logs: &str,  ply: u8){
         .expect("write failed");
 }
 
+pub const CHECKMATE_SCORE: i16 = 9990;
+pub const STATIC_MOVE_PRUNING_MARGIN : i16 = 150;
+
 pub fn discredit_score(score: i16) -> i16{
     // probably a checkmate
-    if score < -9990 || score > 9990{
+    if score < -CHECKMATE_SCORE || score > CHECKMATE_SCORE{
         if score > 0{
             return score - 1;
         }
@@ -928,8 +931,19 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     return best_mvel;
 }
 
-pub const MOVE_LINE_END : u16 = 0xF000 | 1;
-pub const BETA_CUTOFF: u16 = 0xF000 | 2;
+// stolen I mean borrowed from the blunder engine
+const FUTILITY_MARGINS: [i16; 9] = [
+	0,
+	100, // depth 1
+	160, // depth 2
+	220, // depth 3
+	280, // depth 4
+	340, // depth 5
+	400, // depth 6
+	460, // depth 7
+	520, // depth 8
+];
+
 
 pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32) -> MoveScorePair{
 
@@ -978,8 +992,6 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     }
     
     
-    // debug_print(&format!("--NEW SEARCH d:{}--", depth), depth);
-
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
     // upper bound
@@ -989,14 +1001,43 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     get_moves(chess_board, &mut move_vec_unsorted);
 
+    let in_check = chess_board.check_mask != 0;
+    let isPVNode = beta-alpha != 1;
+
+
     // extend search
     if search_extention_counter < MAX_SEARCH_EXTENSION{
-        if chess_board.check_mask != 0{
+        if in_check{
             search_extention_counter += 1;
             depth += 1;
         }
     }
+
+    // Static move prunign
+    // if !in_check && beta.abs() < CHECKMATE_SCORE && !isPVNode{
+    //     let static_score = get_board_score(chess_board);
+
+    //     let score_margin = STATIC_MOVE_PRUNING_MARGIN * depth as i16;
+
+    //     if static_score - score_margin >= beta{
+    //         return MoveScorePair::new(0, static_score - score_margin, SCORE_NOT_EXACT_TYPE);;
+    //     }
+    // }
+
+    // razoring
     
+    if depth <= 2 && !in_check && !isPVNode{
+        let static_score = get_board_score(chess_board);
+
+        if static_score + FUTILITY_MARGINS[depth as usize] * 3 < alpha{
+            let score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
+
+            if score.score < alpha {
+                // println!("razor worked");
+				return score;
+			}
+        }
+    }
 
     // no legal moves
     if move_vec_unsorted.len() == 0{
