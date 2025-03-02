@@ -663,7 +663,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter);
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter);
         }
         else if flag == 1{
             
@@ -863,7 +863,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, -beta, -alpha, &timer, &mut node_counter);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -931,7 +931,18 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 pub const MOVE_LINE_END : u16 = 0xF000 | 1;
 pub const BETA_CUTOFF: u16 = 0xF000 | 2;
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, depth: u8, ply: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32) -> MoveScorePair{
+
+    // check every 2048 nodes if our time runs out
+    // heavily inspired by the blunder engine
+    if (*node_counter & 2047) == 0{
+        if timer.time_out(){
+            return MoveScorePair::new(0, -INF, SCORE_NOT_EXACT_TYPE);
+        }
+    }
+
+    *node_counter += 1;
+    
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash) - 1;
     
     let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
@@ -961,7 +972,6 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     
     if depth == 0{
-        *node_counter += 1;
         let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
 
         return qsearch_score;
@@ -972,14 +982,6 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
-    // check every 2048 nodes if our time runs out
-    // heavily inspired by the blunder engine
-    if (*node_counter & 2047) == 0{
-        if timer.time_out(){
-            return best_mvel_pair;
-        }
-    }
-
     // upper bound
     let mut tt_entry_type: u8 = UPPER_BOUND;
 
@@ -987,12 +989,13 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     get_moves(chess_board, &mut move_vec_unsorted);
 
-    // if search_extention_counter < MAX_SEARCH_EXTENSION{
-    //     if chess_board.check_mask != 0{
-    //         search_extention_counter += 1;
-    //         depth += 1;
-    //     }
-    // }
+    // extend search
+    if search_extention_counter < MAX_SEARCH_EXTENSION{
+        if chess_board.check_mask != 0{
+            search_extention_counter += 1;
+            depth += 1;
+        }
+    }
     
 
     // no legal moves
@@ -1031,7 +1034,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, -beta, -alpha, timer, node_counter);   
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter);   
         }
 
         if mvel_pair.score >= beta{
