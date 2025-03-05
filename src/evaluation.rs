@@ -200,6 +200,22 @@ const QUEEN_PIECE_SQUARE_TABLE : [i16; 64] =  [
     -20,-10,-10, -5, -5,-10,-10,-20
 ];
 
+// heavily inspired from Blunder Engine
+const PASS_PAWN_PIECE_SQUARE_TABLE : [i16; 64] = [
+	0, 0, 0, 0, 0, 0, 0, 0,
+	77, 74, 63, 53, 59, 60, 72, 77,
+	91, 83, 66, 40, 30, 61, 67, 84,
+	55, 52, 42, 35, 30, 34, 56, 52,
+	29, 26, 21, 18, 17, 19, 34, 30,
+	8, 6, 5, 1, 1, -1, 14, 7,
+	2, 3, -4, 0, -2, -1, 7, 6,
+	0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+pub const KING_DANGER_SQUARES_MASK : [u64; 64] = GET_KING_DANGER_SQUARES_MASK();
+
+
+
 const IMPORTANT_ATTACK_SQUARES_MASK: u64 = 0x3C7E7E3C0000;
 
 const PIECE_SQUARE_TABLE_REF : [&[i16; 64]; 4] = [
@@ -208,6 +224,35 @@ const PIECE_SQUARE_TABLE_REF : [&[i16; 64]; 4] = [
     &ROOK_PIECE_SQUARE_TABLE,
     &QUEEN_PIECE_SQUARE_TABLE
 ];
+
+const fn GET_KING_DANGER_SQUARES_MASK() -> [u64; 64]{
+    let mut bb_array = [0u64; 64];
+    
+    let mut i : i16 = 0;
+    let mut i2 : i16 = 0;
+
+    while i < 64{
+        let mut bb : u64 = 0;
+        i2 = 0;
+        while i2 < 64{
+            let x = (i % 8 - i2 % 8).abs();
+            let y = (i / 8 - i2 / 8).abs();
+
+            if !(x >= 3 || y >= 3){
+                if x + y <= 3{
+                    bb |= 1 << i2;
+                }
+            }
+
+            i2 += 1;
+        }
+        
+        bb_array[i as usize] = bb;
+        i += 1;
+    }
+
+    return bb_array;
+}
 
 pub fn reverse_piece_square_index(index: usize) -> usize{
     let y = index / 8;
@@ -430,66 +475,41 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
         let pawn_x : u8 = pawn_square as u8 % 8;
         let pawn_y : u8 = pawn_square as u8 / 8;
 
-        let infront_pawn_bitboard: u64 = !0 >> (8 * (8-pawn_y));
+        let infront_bb: u64 = !0 >> (8 * (8-pawn_y));
 
-        let side_pawn_bitboard: u64 = get_vert_side_bitboards(pawn_x);
+        let side_bb: u64 = get_vert_side_bitboards(pawn_x);
 
-        // println!("{}", pawn_x);
-        // print_bitboard(side_pawn_bitboard);
+        let pawn_col_bb = (VERTICLE_SLICE_BITBOARD >> (7-pawn_x)) & infront_bb;
 
-        let is_accompanied = side_pawn_bitboard & white_pawn_bitboard != 0;
-        let is_supported = BLACK_PAWN_ATTACK_MASK[pawn_square] & white_pawn_bitboard != 0;
-        let is_pass = (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[6] == 0;
+        let side_pawn_bb = side_bb & infront_bb;
 
-        // if is_accompanied{
-        //     score += 5;
-        // }
-
-        // if is_pass{
-        //     score += 5
-        // }
-
-        // if is_supported{
-        //     score += 10;
-        // }
-
-        if is_supported && is_pass{
-            score += 10;
+        if (side_pawn_bb | pawn_col_bb) & black_pawn_bitboard == 0 && pawn_col_bb & white_pawn_bitboard == 0{
+            score += PASS_PAWN_PIECE_SQUARE_TABLE[pawn_square as usize];
         }
 
         white_pawn_temp ^= 1 << pawn_square;
     }
 
     while black_pawn_temp != 0{
-        let pawn_square : usize = black_pawn_temp.trailing_zeros() as usize;
+        let pawn_square : usize = black_pawn_temp.trailing_zeros() as usize;        
         
         let pawn_x : u8 = pawn_square as u8 % 8;
         let pawn_y : u8 = pawn_square as u8 / 8;
 
-        let infront_pawn_bitboard: u64 = !0 << (8 * (pawn_y+1));
+        let infront_bb: u64 = !0 << (8 * (pawn_y+1));
 
-        let side_pawn_bitboard: u64 = get_vert_side_bitboards(pawn_x);
+        let side_bb: u64 = get_vert_side_bitboards(pawn_x);
 
-        let is_accompanied = side_pawn_bitboard & black_pawn_bitboard != 0;
-        let is_supported = WHITE_PAWN_ATTACK_MASK[pawn_square] & black_pawn_bitboard != 0;
-        let is_pass = (side_pawn_bitboard | (VERTICLE_SLICE_BITBOARD >> (7-pawn_x))) & infront_pawn_bitboard & board.piece_bitboards[0] == 0;
+        // let is_accompanied = side_pawn_bitboard & black_pawn_bitboard != 0;
+        // let is_supported = WHITE_PAWN_ATTACK_MASK[pawn_square] & black_pawn_bitboard != 0;
+        let pawn_col_bb = (VERTICLE_SLICE_BITBOARD >> (7-pawn_x)) & infront_bb;
 
-        // if is_accompanied{
-        //     score -= 5;
-        // }
+        let side_pawn_bb = side_bb & infront_bb;
 
-        // if is_pass{
-        //     score -= 5
-        // }
-
-        // if is_supported{
-        //     score -= 10;
-        // }
-
-        if is_accompanied && is_pass{
-            score -= 10;
+        if (side_pawn_bb | pawn_col_bb) & white_pawn_bitboard == 0 && pawn_col_bb & black_pawn_bitboard == 0{
+            let reversed_pawn_square = reverse_piece_square_index(pawn_square) as usize;
+            score -= PASS_PAWN_PIECE_SQUARE_TABLE[reversed_pawn_square];
         }
-
         black_pawn_temp ^= 1 << pawn_square;
     }
 
@@ -684,6 +704,7 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
 
     // doubled pawn penalty
     score += doubled_pawn_score(board, endgame_weight);
+    score += pawn_surrounding_score(board, endgame_weight);
 
     // relative evaluation due to negamax
     if board.board_color{

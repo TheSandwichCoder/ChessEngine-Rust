@@ -794,14 +794,13 @@ pub fn discredit_score(score: i16) -> i16{
     return score;
 }
 
-pub fn get_search_extention(board: &ChessBoard, mv_weight_pair: MoveWeightPair) -> u8{
-    // capture extension
-    if mv_weight_pair.weight == 2{
-        return 1;
+pub fn get_search_extention(board: &ChessBoard) -> bool{
+    // if the enemy is in check
+    if board.check_mask != 0{
+        return true;
     }
-
-    return 0;
-
+    
+    false
 }
 
 const INF: i16 = 32767;
@@ -1001,13 +1000,12 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     get_moves(chess_board, &mut move_vec_unsorted);
 
-    let in_check = chess_board.check_mask != 0;
-    let isPVNode = beta-alpha != 1;
+    // let isPVNode = beta-alpha != 1;
 
 
     // extend search
     if search_extention_counter < MAX_SEARCH_EXTENSION{
-        if in_check{
+        if get_search_extention(chess_board){
             search_extention_counter += 1;
             depth += 1;
         }
@@ -1025,19 +1023,21 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // }
 
     // razoring
+
+    // let in_check = chess_board.check_mask != 0;
     
-    if depth <= 2 && !in_check && !isPVNode{
-        let static_score = get_board_score(chess_board);
+    // if depth <= 2 && !in_check && !isPVNode{
+    //     let static_score = get_board_score(chess_board);
 
-        if static_score + FUTILITY_MARGINS[depth as usize] * 3 < alpha{
-            let score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
+    //     if static_score + FUTILITY_MARGINS[depth as usize] * 3 < alpha{
+    //         let score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
 
-            if score.score < alpha {
-                // println!("razor worked");
-				return score;
-			}
-        }
-    }
+    //         if score.score < alpha {
+    //             // println!("razor worked");
+	// 			return score;
+	// 		}
+    //     }
+    // }
 
     // no legal moves
     if move_vec_unsorted.len() == 0{

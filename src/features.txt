@@ -22,9 +22,9 @@ Features:
 - quiescence search
 - move ordering
 - king safety
+move extensions
 
 Goals:
 - pawn promotion
 - castling bias
-- move extensions
-- 
+- change the move iterator from a vector into the stack
