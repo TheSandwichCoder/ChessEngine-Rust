@@ -10,6 +10,7 @@ use crate::app_settings::*;
 use crate::engine::*;
 use crate::game_board::*;
 use crate::evaluation::*;
+use crate::move_compute::*;
 
 pub struct BoardPlugin;
 
@@ -400,15 +401,17 @@ fn player_move_piece(
 
         // making a move
         else{
-            let mut move_vec: Vec<u16> = Vec::new();
+            let mut move_buffer = MoveBuffer::new();
 
-            get_moves(&mut board_parent.game_board.board, &mut move_vec);
+            get_moves(&mut board_parent.game_board.board, &mut move_buffer);
 
             let mut is_legal : bool = false;
             
             let mut move_code : u16 = get_move_code(board_pos_to_square_num(board_parent.piece_selected_pos), board_pos_to_square_num(board_selected_pos));
 
-            for mv in move_vec{
+            for mv_i in 0..move_buffer.index{
+                let mv = move_buffer.mv_arr[mv_i];
+
                 if mv & 0xFFF == move_code{
                     // promotion - forced to be queen promotion cause Im lazy
                     if mv >> 12 >= 5 && mv >> 12 <= 8{

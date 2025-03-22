@@ -16,14 +16,14 @@ pub fn get_gamestate(game_board: &mut GameChessBoard) -> u8{
         }
     }
 
-    let mut move_vec: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
     let chess_board : &mut ChessBoard = &mut game_board.board; 
 
-    get_moves(chess_board, &mut move_vec);
+    get_moves(chess_board, &mut move_buffer);
 
     // no moves
-    if move_vec.len() == 0{
+    if move_buffer.index == 0{
         if chess_board.check_mask != 0{
             if chess_board.board_color{
                 return 2;

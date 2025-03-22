@@ -68,16 +68,32 @@ const MAX_MOVE_COUNT: usize = 118;
 pub struct MoveBuffer{
     pub index: usize,
     pub mv_arr: [u16; MAX_MOVE_COUNT],
+    pub mv_weight_arr: [i8; MAX_MOVE_COUNT],
 }
 
 impl MoveBuffer{
     pub fn new() -> MoveBuffer{
-        return MoveBuffer{index: 0, mv_arr: [0;MAX_MOVE_COUNT]}
+        return MoveBuffer{index: 0, mv_arr: [0;MAX_MOVE_COUNT], mv_weight_arr: [0; MAX_MOVE_COUNT]}
     }
 
     pub fn add(&mut self, mv: u16){
         self.mv_arr[self.index] = mv;
         self.index += 1;
+    }
+
+    pub fn swap(&mut self, i1: usize, i2: usize){
+        if i1 == i2{
+            return;
+        }
+
+        let temp_mv = self.mv_arr[i1];
+        let temp_score = self.mv_weight_arr[i1];
+
+        self.mv_arr[i1] = self.mv_arr[i2];
+        self.mv_weight_arr[i1] = self.mv_weight_arr[i2];
+
+        self.mv_arr[i2] = temp_mv;
+        self.mv_weight_arr[i2] = temp_score;
     }
 }
 

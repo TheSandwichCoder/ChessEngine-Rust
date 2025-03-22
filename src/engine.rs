@@ -52,9 +52,9 @@ impl MoveWeightPair {
     }
 }
 
-fn get_move_weight(mv: u16, board: &ChessBoard) -> i16{
+fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
     let to_square: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
-    let mut weight : i16 = 0;
+    let mut weight : i8 = 0;
 
     // is a piece capture
     if board.all_piece_bitboard & 1<<to_square != 0{
@@ -71,7 +71,7 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i16{
 
         else{
             // depending on how large the difference is
-            weight -= (piece_moved-piece_captured) as i16;
+            weight -= (piece_moved-piece_captured) as i8;
         }
     }
 
@@ -83,9 +83,30 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i16{
     return weight;
 }
 
+fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard){
+    for i in 0..move_buffer.index{
+        move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
+    }
+}
+
+// highly inspired by blunder engine
+fn order_move_buffer(move_buffer: &mut MoveBuffer, curr_index: usize){
+    let mut best_index = curr_index;
+    let mut best_score = move_buffer.mv_weight_arr[curr_index];
+
+    for mv_i in curr_index+1..move_buffer.index{
+        if move_buffer.mv_weight_arr[mv_i] > best_score{
+            best_index = mv_i;
+            best_score = move_buffer.mv_weight_arr[mv_i];
+        }
+    }
+
+    move_buffer.swap(curr_index, best_index);
+}
+
 fn sort_move_vec(move_vec_sorted: &mut Vec<MoveWeightPair>, move_vec: &Vec<u16>, chess_board: &ChessBoard){
     for mv in move_vec{
-        move_vec_sorted.push(MoveWeightPair::new(*mv, get_move_weight(*mv, chess_board)));
+        move_vec_sorted.push(MoveWeightPair::new(*mv, get_move_weight(*mv, chess_board) as i16));
     }
 
     // descending order since we want best weights first
@@ -247,13 +268,14 @@ pub fn perft(board: &mut ChessBoard, depth: u16) -> u32{
         return 1;
     }
 
-    let mut move_vec: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
-    get_moves(board, &mut move_vec);
+    get_moves(board, &mut move_buffer);
 
     let mut node_num: u32 = 0;
     
-    for mv in move_vec{
+    for mv_i in 0..move_buffer.index{
+        let mv = move_buffer.mv_arr[mv_i];
         let mut sub_board: ChessBoard = board.clone();
 
         make_move(&mut sub_board, mv);
@@ -265,13 +287,15 @@ pub fn perft(board: &mut ChessBoard, depth: u16) -> u32{
 }
 
 pub fn sub_perft(board: &mut ChessBoard, depth: u16){
-    let mut move_vec: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
-    get_moves(board, &mut move_vec);
+    get_moves(board, &mut move_buffer);
 
     let mut total_counter: u32 = 0;
 
-    for mv in move_vec{
+    for mv_i in 0..move_buffer.index{
+        let mv = move_buffer.mv_arr[mv_i];
+
         let mut sub_board: ChessBoard = board.clone();
 
         make_move(&mut sub_board, mv);
@@ -291,13 +315,15 @@ pub fn debug_zobrist_hash(board: &mut ChessBoard, depth:u16){
         return;
     }
 
-    let mut move_vec: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
-    get_moves(board, &mut move_vec);
+    get_moves(board, &mut move_buffer);
 
     let mut node_num: u32 = 0;
     
-    for mv in move_vec{
+    for mv_i in 0..move_buffer.index{
+        let mv = move_buffer.mv_arr[mv_i];
+
         let mut sub_board: ChessBoard = board.clone();
 
         make_move(&mut sub_board, mv);
@@ -474,9 +500,12 @@ BATTLE MOVE LIMIT: {}
         }
 
         else if input_string == "show moves"{
-            let mut move_vec: Vec<u16> = Vec::new();
+            let mut move_buffer = MoveBuffer::new();
 
-            get_moves(&mut game_board.board, &mut move_vec);
+            get_moves(&mut game_board.board, &mut move_buffer);
+
+            let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
+            let move_vec = Vec::from(move_buffer_slice);
 
             print_moves(&move_vec);
         }
@@ -663,7 +692,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter);
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0);
         }
         else if flag == 1{
             
@@ -834,16 +863,17 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
     let mut curr_depth = 1;
 
-    let mut move_vec_unsorted: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
-    let mut node_counter = 0;
+    get_moves(chess_board, &mut move_buffer);
 
-    get_moves(chess_board, &mut move_vec_unsorted);
+    let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];    
+    let move_vec_unsorted = Vec::from(move_buffer_slice);
 
     let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
-
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
 
+    let mut node_counter = 0;
     while curr_depth < MAX_SEARCH_DEPTH{
         node_counter = 0;
 
@@ -853,6 +883,8 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
         }
         // Search Starts here
         let mut best_mvel_search_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
+
+        // debug_log(&"akjsdfkjs", 0);
 
         for mut mv_weight_pair in &mut move_vec_sorted{
             let mv = mv_weight_pair.mv;
@@ -865,7 +897,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -944,7 +976,7 @@ const FUTILITY_MARGINS: [i16; 9] = [
 ];
 
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16) -> MoveScorePair{
 
     // check every 2048 nodes if our time runs out
     // heavily inspired by the blunder engine
@@ -971,14 +1003,17 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
             if entry_type == EXACT_BOUND{
                 return MoveScorePair::new(0, tt_entry.score, SCORE_EXACT_TYPE);
+                // debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             }
 
             else if entry_type == LOWER_BOUND && tt_entry.score >= beta{
                 return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
+                // debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             }
 
             else if entry_type == UPPER_BOUND && tt_entry.score <= alpha{
                 return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
+                // debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             }
         }
     }  
@@ -986,6 +1021,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     if depth == 0{
         let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
+
+        // debug_log(&format!("({},{},{},{})", 1, qsearch_score.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
 
         return qsearch_score;
     }
@@ -996,9 +1033,9 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // upper bound
     let mut tt_entry_type: u8 = UPPER_BOUND;
 
-    let mut move_vec_unsorted: Vec<u16> = Vec::new();
+    let mut move_buffer = MoveBuffer::new();
 
-    get_moves(chess_board, &mut move_vec_unsorted);
+    get_moves(chess_board, &mut move_buffer);
 
     // let isPVNode = beta-alpha != 1;
 
@@ -1040,7 +1077,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // }
 
     // no legal moves
-    if move_vec_unsorted.len() == 0{
+    if move_buffer.index == 0{
         // stalemate
         if chess_board.check_mask == 0{
             best_mvel_pair.score = 0;
@@ -1056,11 +1093,13 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         return best_mvel_pair
     }
 
-    let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
-    sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
+    // gets the weights for the moves
+    update_move_buffer_weights(&mut move_buffer, chess_board);
 
-    for mv_weight_pair in move_vec_sorted{
-        let mv = mv_weight_pair.mv;
+    for move_i in 0..move_buffer.index{
+        order_move_buffer(&mut move_buffer, move_i);
+
+        let mv = move_buffer.mv_arr[move_i];
         
         let mut sub_board: ChessBoard = chess_board.clone();
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
@@ -1075,7 +1114,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter);   
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv);
         }
 
         if mvel_pair.score >= beta{
@@ -1086,6 +1125,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             mvel_pair.is_exact = SCORE_NOT_EXACT_TYPE;
             transposition_table.add(true_hash, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
 
+            // debug_log(&format!("({},{},{},{})", 2,mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             return mvel_pair;
         }
 
@@ -1111,6 +1151,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         transposition_table.add(true_hash, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
     }
 
+    // debug_log(&format!("({},{},{},{})", 0, best_mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
 
     return best_mvel_pair;
 }
@@ -1129,21 +1170,21 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
     
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
-    // upper bound
-    let mut move_vec_unsorted: Vec<u16> = Vec::new();
+    let mut move_buffer: MoveBuffer = MoveBuffer::new();
 
-    get_capture_moves(chess_board, &mut move_vec_unsorted);
+    get_capture_moves(chess_board, &mut move_buffer);
 
     // no legal moves
-    if move_vec_unsorted.len() == 0 || depth == 0{
+    if move_buffer.index == 0 || depth == 0{
         return MoveScorePair::new(0, get_board_score(chess_board), SCORE_EXACT_TYPE);
     }
 
-    let mut move_vec_sorted: Vec<MoveWeightPair> = Vec::new();
-    sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
+    update_move_buffer_weights(&mut move_buffer, chess_board);
 
-    for mv_weight_pair in move_vec_sorted{
-        let mv = mv_weight_pair.mv;
+    for mv_i in 0.. move_buffer.index{
+        order_move_buffer(&mut move_buffer, mv_i);
+
+        let mv = move_buffer.mv_arr[mv_i];
 
         let mut sub_board: ChessBoard = chess_board.clone();
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);

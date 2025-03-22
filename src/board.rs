@@ -1110,13 +1110,11 @@ pub fn update_board(chess_board: &mut ChessBoard){
     update_board_pin_mask(chess_board);
 }
 
-pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
+pub fn get_capture_moves(chess_board: &mut ChessBoard, move_buffer: &mut MoveBuffer){
     update_board(chess_board);
 
     let piece_color_offset: usize;
     let opp_all_piece_bitboard: u64;
-
-    let mut move_buffer: MoveBuffer = MoveBuffer::new();
 
     if chess_board.board_color{
         piece_color_offset = 0;
@@ -1134,7 +1132,7 @@ pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, &mut move_buffer, square, opp_all_piece_bitboard);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_buffer, square, opp_all_piece_bitboard);
 
                 temp_piece_bitboard ^= 1<<square;
             }
@@ -1234,12 +1232,9 @@ pub fn get_capture_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             move_buffer.add(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
         }
     }
-
-    let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
-    *move_vec = Vec::from(move_buffer_slice);
 }
 
-pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
+pub fn get_moves(chess_board: &mut ChessBoard, mut move_buffer: &mut MoveBuffer){
     update_board(chess_board);
 
     let piece_color_offset: usize;
@@ -1251,8 +1246,6 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
         piece_color_offset = 6;
     }
 
-    let mut move_buffer: MoveBuffer = MoveBuffer::new();
-
     // standard movement
 
     if !chess_board.is_double_check{
@@ -1262,7 +1255,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             while temp_piece_bitboard != 0{
                 let square:u8 = temp_piece_bitboard.trailing_zeros() as u8;
 
-                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, &mut move_buffer, square, !0);
+                MOVE_FUNCTIONS_ARRAY[piece_type](chess_board, move_buffer, square, !0);
 
                 temp_piece_bitboard ^= 1<<square;
             }
@@ -1273,10 +1266,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
 
         let king_square:u8 = chess_board.piece_bitboards[5+piece_color_offset].trailing_zeros() as u8;
 
-        MOVE_FUNCTIONS_ARRAY[5](chess_board, &mut move_buffer, king_square, !0);
-
-        let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
-        *move_vec = Vec::from(move_buffer_slice);
+        MOVE_FUNCTIONS_ARRAY[5](chess_board, move_buffer, king_square, !0);
 
         // can break early
         return;
@@ -1295,7 +1285,7 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
     while pawn_double_move_bitboards != 0{
         let square:u8 = pawn_double_move_bitboards.trailing_zeros() as u8;
 
-        add_pawn_double_move(chess_board, &mut move_buffer, square);
+        add_pawn_double_move(chess_board, move_buffer, square);
 
         pawn_double_move_bitboards ^= 1<<square;
     }
@@ -1433,7 +1423,4 @@ pub fn get_moves(chess_board: &mut ChessBoard, move_vec: &mut Vec<u16>){
             move_buffer.add(get_move_code_special(passant_square, enpassant_to_square as u8, 3));
         }
     }
-    
-    let move_buffer_slice = &move_buffer.mv_arr[0..move_buffer.index];
-    *move_vec = Vec::from(move_buffer_slice);
 }
