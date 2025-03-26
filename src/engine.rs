@@ -13,7 +13,7 @@ use crate::evaluation::*;
 use crate::game_board::*;
 use crate::zobrist_hash::*;
 use crate::transposition_table::*;
-use crate::timer::Timer;
+use crate::timer::*;
 
 
 #[derive(Copy, Clone)]
@@ -874,6 +874,8 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
 
     let mut node_counter = 0;
+    // let mut profiler = Profiler::new();
+
     while curr_depth < MAX_SEARCH_DEPTH{
         node_counter = 0;
 
@@ -992,7 +994,6 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
     
-
     let tt_entry = transposition_table.get(true_hash);
 
     // extra check to make sure we have a valid collision
@@ -1102,6 +1103,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         let mv = move_buffer.mv_arr[move_i];
         
         let mut sub_board: ChessBoard = chess_board.clone();
+
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
         make_move(&mut sub_board, mv);
@@ -1166,7 +1168,6 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
     if alpha < stand_pat{
         alpha = stand_pat;
     }
-        
     
     let mut best_mvel_pair : MoveScorePair = MoveScorePair::new(0, -INF, SCORE_EXACT_TYPE);
 
@@ -1176,7 +1177,9 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
 
     // no legal moves
     if move_buffer.index == 0 || depth == 0{
-        return MoveScorePair::new(0, get_board_score(chess_board), SCORE_EXACT_TYPE);
+        let board_score = get_board_score(chess_board);
+
+        return MoveScorePair::new(0, board_score, SCORE_EXACT_TYPE);
     }
 
     update_move_buffer_weights(&mut move_buffer, chess_board);

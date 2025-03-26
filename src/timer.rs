@@ -14,3 +14,32 @@ impl Timer{
         return self.time_start.elapsed() > self.time_alloc; 
     }
 }
+
+// this is literally just a profiler that I made myself 
+// cus stupid windows does not support samply
+
+pub struct Profiler{
+    timer: Instant,
+    time_taken: Duration,
+    sample_count: u128,
+}
+
+impl Profiler{
+    pub fn new() -> Profiler{
+        return Profiler{timer: Instant::now(), time_taken: Duration::new(0, 0), sample_count: 0};
+    }
+
+    pub fn timer_start(&mut self){
+        self.timer = Instant::now();
+    }
+
+    pub fn timer_end(&mut self){
+        self.time_taken += self.timer.elapsed();
+        self.sample_count += 1;
+    }
+
+    pub fn show(&self){
+        println!("total: {}ms", self.time_taken.as_millis());
+        println!("average sample: {} microsecond", self.time_taken.as_micros() / self.sample_count);
+    }
+}

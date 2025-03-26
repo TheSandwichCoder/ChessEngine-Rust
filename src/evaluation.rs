@@ -280,7 +280,7 @@ pub fn get_endgame_weight(board: &ChessBoard) -> f32{
     return endgame_weight * endgame_weight;
 }
 
-pub fn king_engame_square_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
+pub fn king_endgame_square_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
     let mut score: i16 = 0;
 
     let white_king_square : usize = board.piece_bitboards[5].trailing_zeros() as usize;
@@ -514,13 +514,10 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     }
 
     return (score as f32 * endgame_weight) as i16;
-    // return (score as f32 * endgame_weight) as i16;
 }
 
-pub fn get_attack_square_score(mut white_attack_bitboard : u64, mut black_attack_bitboard: u64, endgame_weight: f32) -> i16{
+pub fn get_attack_square_score(mut white_attack_bitboard : u64, mut black_attack_bitboard: u64, inv_endgame_weight: f32) -> i16{
     let mut score : i16 = 0;
-
-    let inv_endgame : f32 = 1.0 - endgame_weight;
 
     score += white_attack_bitboard.count_ones() as i16 * 2;
     score -= black_attack_bitboard.count_ones() as i16 * 2;
@@ -531,7 +528,7 @@ pub fn get_attack_square_score(mut white_attack_bitboard : u64, mut black_attack
     score += white_attack_bitboard.count_ones() as i16 * 10;
     score -= black_attack_bitboard.count_ones() as i16 * 10;
 
-    return int_float_mul(score, inv_endgame);
+    return int_float_mul(score, inv_endgame_weight);
 }
 
 pub fn bishop_knight_endgame_bias(board: &ChessBoard, board_color: bool, endgame_weight: f32) -> i16{
@@ -601,7 +598,7 @@ const PIECE_ATTACK_UNIT: [u8; 4] = [
     2, 2, 3, 5
 ];
 
-pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack_squares : &[u64;12], endgame_weight: f32) -> i16{
+pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack_squares : &[u64;12], inv_endgame_weight: f32) -> i16{
     let king_square: u8;
     let king_infront_rows_bitboard: u64;
     let friendly_piece_bitboard: u64;
@@ -626,9 +623,7 @@ pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack
     let king_x = king_square % 8;
     let king_zone : u64 = KING_MOVE_MASK[king_square as usize] | (king_infront_rows_bitboard & VERTICLE_SLICE_BITBOARD >> (7-king_x)) ^ (1<<king_square);
 
-    let mut score: i16 = 0;
-    let inv_endgame = 1.0-endgame_weight;
-    
+    let mut score: i16 = 0;    
     // open file penalties
     // to the right
     if king_x != 7{
@@ -663,48 +658,78 @@ pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack
     // penalty
     score -= ATTACK_UNIT_TABLE[attack_unit_num as usize];
 
-    return int_float_mul(score, inv_endgame);
+    return int_float_mul(score, inv_endgame_weight);
 } 
 
-pub fn get_board_score(board: &ChessBoard) -> i16{
+pub fn get_cheap_board_score(board: &ChessBoard) -> i16{
     let mut score: i16 = 0;
-
-    let mut ind_piece_attack_squares: [u64; 12] = [0;12];
-
-    get_board_individual_attack_mask(board, &mut ind_piece_attack_squares);
-
-    let white_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[0..6]);
-    let black_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[6..12]);
 
     let endgame_weight : f32 = get_endgame_weight(board); 
 
     score += get_board_piece_value_score(board, endgame_weight);
 
     score += get_board_piece_square_score(board);
+    
+    if board.board_color{
+        return score;
+    }
+    else{
+        return -score;
+    }
+}
+
+pub fn get_board_score(board: &ChessBoard) -> i16{
+    let mut score: i16 = 0;
+
+    let endgame_weight : f32 = get_endgame_weight(board); 
+    let inv_endgame_weight: f32 = 1.0 - endgame_weight;
+
+    
+    score += get_board_piece_square_score(board);
+
+    score += get_board_piece_value_score(board, endgame_weight);
 
     // prioritises pawn near end nearer to endgame
     score += get_pawn_piece_square_score(board, endgame_weight);
 
-    // incentivises control over center and piece mobility
-    score += get_attack_square_score(white_attack_bitboard, black_attack_bitboard, endgame_weight);
+    // prioritises king near center
+    score += king_endgame_square_weight(board, endgame_weight);
+    
+    // heavy evals / inv endgame affected scoring
+
+    if inv_endgame_weight > 0.1{
+        let mut ind_piece_attack_squares: [u64; 12] = [0;12];
+
+        get_board_individual_attack_mask(board, &mut ind_piece_attack_squares);
+
+        let white_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[0..6]);
+        let black_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[6..12]);
+
+        // incentivises control over center and piece mobility
+        score += get_attack_square_score(white_attack_bitboard, black_attack_bitboard, inv_endgame_weight);
+
+        score += king_safety_score(board, true, &ind_piece_attack_squares, inv_endgame_weight);
+        score -= king_safety_score(board, false, &ind_piece_attack_squares, inv_endgame_weight);
+    }
+    
     
 
-    // prioritises king near center
-    score += king_engame_square_weight(board, endgame_weight);
+    // endgame affected scoring
 
-    // wants king to be closer to other king
-    score += king_distance_weight(board, endgame_weight);
+    if endgame_weight > 0.1{
+        // wants king to be closer to other king
+        score += king_distance_weight(board, endgame_weight);
 
-    score += king_safety_score(board, true, &ind_piece_attack_squares, endgame_weight);
-    score -= king_safety_score(board, false, &ind_piece_attack_squares, endgame_weight);
+        // doubled pawn penalty
+        score += doubled_pawn_score(board, endgame_weight);
+        score += pawn_surrounding_score(board, endgame_weight);
 
-    // bishop knight endgame - king square favours corners
-    score += bishop_knight_endgame_bias(board, true, endgame_weight);
-    score += bishop_knight_endgame_bias(board, false, endgame_weight);
+        // bishop knight endgame - king square favours corners
+        score += bishop_knight_endgame_bias(board, true, endgame_weight);
+        score += bishop_knight_endgame_bias(board, false, endgame_weight);
+    }
 
-    // doubled pawn penalty
-    score += doubled_pawn_score(board, endgame_weight);
-    score += pawn_surrounding_score(board, endgame_weight);
+    
 
     // relative evaluation due to negamax
     if board.board_color{

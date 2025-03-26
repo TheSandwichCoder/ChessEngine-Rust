@@ -53,6 +53,7 @@ const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut MoveBuffer, u8, u64); 6] = [
 #[derive(Clone)]
 pub struct ChessBoard{
     pub piece_bitboards: [u64; 12],
+    pub enemy_attack_squares: [u64; 6],
     pub piece_array: [u8; 64],
     pub board_info:u16,
 
