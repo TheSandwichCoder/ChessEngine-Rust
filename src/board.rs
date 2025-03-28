@@ -53,7 +53,6 @@ const MOVE_FUNCTIONS_ARRAY: [fn(&ChessBoard, &mut MoveBuffer, u8, u64); 6] = [
 #[derive(Clone)]
 pub struct ChessBoard{
     pub piece_bitboards: [u64; 12],
-    pub enemy_attack_squares: [u64; 6],
     pub piece_array: [u8; 64],
     pub board_info:u16,
 
@@ -63,6 +62,7 @@ pub struct ChessBoard{
 
     pub check_mask: u64,
     pub is_double_check: bool,
+    pub is_updated: bool,
 
     pub pin_mask: u64,
     pub attack_mask: u64,
@@ -83,6 +83,7 @@ pub fn create_empty_board() -> ChessBoard{
 
         check_mask: 0,
         is_double_check: false,
+        is_updated: false, 
         pin_mask: 0,
         attack_mask: 0,
         board_color: false,
@@ -449,6 +450,8 @@ pub fn board_to_fen(chess_board: &ChessBoard) -> String{
 
 // DOES NOT return a new board
 pub fn make_move(chess_board: &mut ChessBoard, mv: u16){
+    chess_board.is_updated = false; 
+
     let from_square: u8 = (mv & MOVE_DECODER_MASK) as u8;
     let to_square: u8 = ((mv >> 6) & MOVE_DECODER_MASK) as u8;
 
@@ -1099,6 +1102,9 @@ pub fn update_board_pin_mask(chess_board: &mut ChessBoard){
 }
 
 pub fn update_board(chess_board: &mut ChessBoard){
+    if chess_board.is_updated{
+        return;
+    }
 
     if chess_board.attack_mask == 0{
         update_board_attack_mask(chess_board);
@@ -1109,6 +1115,8 @@ pub fn update_board(chess_board: &mut ChessBoard){
     }
     
     update_board_pin_mask(chess_board);
+
+    chess_board.is_updated = true;
 }
 
 pub fn get_capture_moves(chess_board: &mut ChessBoard, move_buffer: &mut MoveBuffer){

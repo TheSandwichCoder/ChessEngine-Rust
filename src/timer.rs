@@ -40,6 +40,6 @@ impl Profiler{
 
     pub fn show(&self){
         println!("total: {}ms", self.time_taken.as_millis());
-        println!("average sample: {} microsecond", self.time_taken.as_micros() / self.sample_count);
+        println!("average sample: {} ns", self.time_taken.as_nanos() / self.sample_count);
     }
 }

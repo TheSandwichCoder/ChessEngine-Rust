@@ -359,6 +359,8 @@ move special - make special move (pawn double, ep, promotion, castling)
 show moves - show possible moves
 show perft - show perft
 show eval - shows curr evaluation
+update board - updates board
+endgame weight - endgameness of position
 debug z - debug zobrist
 query tt - find entry in TT
 best move - gets best move
@@ -528,6 +530,15 @@ BATTLE MOVE LIMIT: {}
             println!("Evaluation (rel): {}", get_board_score(&game_board.board));
         }
 
+        else if input_string == "update board"{
+            update_board(&mut game_board.board);
+            println!("BOARD UPDATED");
+        }
+
+        else if input_string == "endgame weight"{
+            println!("endgame weight: {}", get_endgame_weight(&game_board.board));
+        }
+
         else if input_string == "debug z"{
             input_string.clear();
             print!("depth >>");
@@ -692,7 +703,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0);
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, &mut Profiler::new());
         }
         else if flag == 1{
             
@@ -874,7 +885,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     sort_move_vec(&mut move_vec_sorted, &move_vec_unsorted, chess_board);
 
     let mut node_counter = 0;
-    // let mut profiler = Profiler::new();
+    let mut profiler = Profiler::new();
 
     while curr_depth < MAX_SEARCH_DEPTH{
         node_counter = 0;
@@ -899,7 +910,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             add_to_game_tree(game_tree, sub_board.zobrist_hash);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, &mut profiler);
 
             remove_from_game_tree(game_tree, sub_board.zobrist_hash);
 
@@ -953,6 +964,8 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
         }
     }
 
+    profiler.show();
+
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash);
 
     let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
@@ -978,7 +991,7 @@ const FUTILITY_MARGINS: [i16; 9] = [
 ];
 
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16) -> MoveScorePair{
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, profiler: &mut Profiler) -> MoveScorePair{
 
     // check every 2048 nodes if our time runs out
     // heavily inspired by the blunder engine
@@ -990,8 +1003,10 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     *node_counter += 1;
     
+    profiler.timer_start();
     let chess_board_repetition: u8 = get_position_counter(game_tree, chess_board.zobrist_hash) - 1;
-    
+    profiler.timer_end();
+
     let true_hash = chess_board.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
     
     let tt_entry = transposition_table.get(true_hash);
@@ -1021,7 +1036,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     
     if depth == 0{
-        let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
+        let qsearch_score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT, profiler);
 
         // debug_log(&format!("({},{},{},{})", 1, qsearch_score.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
 
@@ -1096,7 +1111,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     // gets the weights for the moves
     update_move_buffer_weights(&mut move_buffer, chess_board);
-
+    
     for move_i in 0..move_buffer.index{
         order_move_buffer(&mut move_buffer, move_i);
 
@@ -1116,7 +1131,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
 
         else{
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, profiler);
         }
 
         if mvel_pair.score >= beta{
@@ -1158,7 +1173,9 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     return best_mvel_pair;
 }
 
-pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta: i16, depth: u8) -> MoveScorePair{  
+pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta: i16, depth: u8, profiler: &mut Profiler) -> MoveScorePair{  
+    update_board(chess_board);
+
     let stand_pat = get_board_score(chess_board);
 
     if stand_pat >= beta{
@@ -1194,7 +1211,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
 
         make_move(&mut sub_board, mv);
         
-        mvel_pair = -quiescence_search(&mut sub_board, -beta, -alpha, depth - 1);                
+        mvel_pair = -quiescence_search(&mut sub_board, -beta, -alpha, depth - 1, profiler);                
 
         if mvel_pair.score >= beta{
             return mvel_pair;

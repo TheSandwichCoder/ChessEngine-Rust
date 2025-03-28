@@ -214,7 +214,8 @@ const PASS_PAWN_PIECE_SQUARE_TABLE : [i16; 64] = [
 
 pub const KING_DANGER_SQUARES_MASK : [u64; 64] = GET_KING_DANGER_SQUARES_MASK();
 
-
+pub const KING_HOR_VULNERABLE_MASK : [u64; 64] = GET_KING_HOR_VULNERABLE_MASK();
+pub const KING_DIAG_VULNERABLE_MASK : [u64; 64] = GET_KING_DIAG_VULNERABLE_MASK();
 
 const IMPORTANT_ATTACK_SQUARES_MASK: u64 = 0x3C7E7E3C0000;
 
@@ -248,6 +249,76 @@ const fn GET_KING_DANGER_SQUARES_MASK() -> [u64; 64]{
         }
         
         bb_array[i as usize] = bb;
+        i += 1;
+    }
+
+    return bb_array;
+}
+
+const fn GET_KING_HOR_VULNERABLE_MASK() -> [u64; 64]{
+    let mut bb_array = [0u64; 64];
+
+    let mut i = 0;
+
+    while i < 64{
+        let x = (i % 8) as i16;
+        let y = (i / 8) as i16;
+
+        let mut curr_bb = 0;
+
+        if x + 1 < 8{
+            curr_bb |= VERTICLE_SLICE_BITBOARD >> (x+1);
+        }
+
+        if x - 1 >= 0{
+            curr_bb |= VERTICLE_SLICE_BITBOARD >> (x-1);
+        }
+
+        if y + 1 < 8{
+            curr_bb |= HORIZONTAL_SLICE_BITBOARD >> ((y+1) * 8);
+        }
+
+        if y - 1 >= 0{
+            curr_bb |= HORIZONTAL_SLICE_BITBOARD >> ((y-1) * 8);
+        }
+
+        bb_array[63-i] = curr_bb;
+
+        i += 1;
+    }
+
+    return bb_array;
+}
+
+const fn GET_KING_DIAG_VULNERABLE_MASK() -> [u64; 64]{
+    let mut bb_array = [0u64; 64];
+
+    let mut i = 0;
+
+    while i < 64{
+        let x = (i % 8) as i16;
+        let y = (i / 8) as i16;
+
+        let mut curr_bb = 0;
+
+        if x + 1 < 8{
+            curr_bb |= BISHOP_MOVE_MASK[i+1];
+        }
+
+        if x - 1 >= 0{
+            curr_bb |= BISHOP_MOVE_MASK[i-1];
+        }
+
+        if y + 1 < 8{
+            curr_bb |= BISHOP_MOVE_MASK[i+8];
+        }
+
+        if y - 1 >= 0{
+            curr_bb |= BISHOP_MOVE_MASK[i-8];
+        }
+
+        bb_array[i] = curr_bb;
+
         i += 1;
     }
 
@@ -598,30 +669,110 @@ const PIECE_ATTACK_UNIT: [u8; 4] = [
     2, 2, 3, 5
 ];
 
-pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack_squares : &[u64;12], inv_endgame_weight: f32) -> i16{
+pub fn king_attack_unit_score(board: &ChessBoard, enemy_attack_bitboard: u64 , board_color: bool, inv_endgame_weight: f32) -> i16{
+    let king_square: u8;
+    let king_infront_rows_bitboard: u64;
+
+    let bishop_bb: u64;
+    let rook_bb: u64;
+    let mut knight_bb: u64;
+    let queen_bb: u64;
+    
+    let piece_offset: usize;
+
+    if board_color{
+        king_square = board.piece_bitboards[5].trailing_zeros() as u8;
+        king_infront_rows_bitboard = HALF_SLICE_BITBOARD >> (7-king_square/8) * 8;
+        bishop_bb = board.piece_bitboards[7];
+        knight_bb = board.piece_bitboards[8];
+        rook_bb = board.piece_bitboards[9];
+        queen_bb = board.piece_bitboards[10];
+        piece_offset = 6;
+    }
+    else{
+        king_square = board.piece_bitboards[11].trailing_zeros() as u8;
+        king_infront_rows_bitboard = !HALF_SLICE_BITBOARD << (king_square / 8) * 8;
+        bishop_bb = board.piece_bitboards[1];
+        knight_bb = board.piece_bitboards[2];
+        rook_bb = board.piece_bitboards[3];
+        queen_bb = board.piece_bitboards[4];
+        piece_offset = 0;
+    }
+
+    let king_x = king_square % 8;
+
+    let king_hor_vul = KING_HOR_VULNERABLE_MASK[king_square as usize];
+    let king_diag_vul = KING_DIAG_VULNERABLE_MASK[king_square as usize];
+    
+    // attack unit score
+    let mut attack_unit_num: u8 = 0;
+
+    let king_zone : u64 = KING_MOVE_MASK[king_square as usize] | (king_infront_rows_bitboard & VERTICLE_SLICE_BITBOARD >> (7-king_x)) ^ (1<<king_square);
+
+    let king_zone_attack: u64 = king_zone & enemy_attack_bitboard;
+    
+    
+    // bishop
+    let mut b_temp = bishop_bb & king_diag_vul;
+
+    while b_temp != 0{
+        let square = b_temp.trailing_zeros();
+
+        attack_unit_num += (BISHOP_MOVE_MASK[square as usize] & king_zone_attack).count_ones() as u8 * PIECE_ATTACK_UNIT[0];
+
+        b_temp ^= 1 << square;
+    }
+
+    // rook
+    let mut r_temp = rook_bb & king_hor_vul;
+
+    while r_temp != 0{
+        let square = r_temp.trailing_zeros();
+
+        attack_unit_num += (ROOK_MOVE_MASK[square as usize] & king_zone_attack).count_ones() as u8 * PIECE_ATTACK_UNIT[2];
+
+        r_temp ^= 1 << square;
+    }
+
+    // knight
+    while knight_bb != 0{
+        let knight_square = knight_bb.trailing_zeros();
+
+        attack_unit_num += (KNIGHT_MOVE_MASK[knight_square as usize] & king_zone_attack).count_ones() as u8 * PIECE_ATTACK_UNIT[1];
+
+        knight_bb ^= 1 << knight_square;
+    }
+
+    // queen
+    if queen_bb != 0{
+        let queen_square = queen_bb.trailing_zeros();
+
+        attack_unit_num += (QUEEN_MOVE_MASK[queen_square as usize] & king_zone_attack).count_ones() as u8 * PIECE_ATTACK_UNIT[3];
+    }
+
+    return -int_float_mul(ATTACK_UNIT_TABLE[attack_unit_num as usize], inv_endgame_weight);
+}
+
+pub fn king_safety_score(board: &ChessBoard, board_color: bool, inv_endgame_weight: f32) -> i16{
     let king_square: u8;
     let king_infront_rows_bitboard: u64;
     let friendly_piece_bitboard: u64;
     let friendly_pawn_bitboard: u64;
-    let piece_offset: usize;
 
     if board_color{
         king_square = board.piece_bitboards[5].trailing_zeros() as u8;
         king_infront_rows_bitboard = HALF_SLICE_BITBOARD >> (7-king_square/8) * 8;
         friendly_piece_bitboard = board.white_piece_bitboard;
         friendly_pawn_bitboard = board.piece_bitboards[0];
-        piece_offset = 6;
     }
     else{
         king_square = board.piece_bitboards[11].trailing_zeros() as u8;
         king_infront_rows_bitboard = !HALF_SLICE_BITBOARD << (king_square / 8) * 8;
         friendly_piece_bitboard = board.black_piece_bitboard;
         friendly_pawn_bitboard = board.piece_bitboards[6];
-        piece_offset = 0;
     }
 
     let king_x = king_square % 8;
-    let king_zone : u64 = KING_MOVE_MASK[king_square as usize] | (king_infront_rows_bitboard & VERTICLE_SLICE_BITBOARD >> (7-king_x)) ^ (1<<king_square);
 
     let mut score: i16 = 0;    
     // open file penalties
@@ -643,20 +794,6 @@ pub fn king_safety_score(board: &ChessBoard, board_color: bool, ind_piece_attack
     let close_pawns_num: usize = (KING_MOVE_MASK[king_square as usize] & friendly_pawn_bitboard).count_ones() as usize;
 
     score += PAWN_SHIELD_PENALTY[close_pawns_num];
-
-    // attack unit score
-    let mut attack_unit_num: u8 = 0;
-
-    // skip king and pawns
-    // loops through enemy pieces
-    for rel_piece_type in 1..5{
-        let attack_unit_bitboard : u64 = ind_piece_attack_squares[rel_piece_type + piece_offset] & king_zone;
-
-        attack_unit_num += attack_unit_bitboard.count_ones() as u8 * PIECE_ATTACK_UNIT[rel_piece_type - 1];
-    }
-
-    // penalty
-    score -= ATTACK_UNIT_TABLE[attack_unit_num as usize];
 
     return int_float_mul(score, inv_endgame_weight);
 } 
@@ -698,18 +835,41 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     // heavy evals / inv endgame affected scoring
 
     if inv_endgame_weight > 0.1{
-        let mut ind_piece_attack_squares: [u64; 12] = [0;12];
+        // let mut ind_piece_attack_squares: [u64; 12] = [0;12];
 
-        get_board_individual_attack_mask(board, &mut ind_piece_attack_squares);
+        // get_board_individual_attack_mask(board, &mut ind_piece_attack_squares);
 
-        let white_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[0..6]);
-        let black_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[6..12]);
+        // let white_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[0..6]);
+        // let black_attack_bitboard : u64 = or_together(&ind_piece_attack_squares[6..12]);
+
+        let white_attack_bitboard: u64;
+        let black_attack_bitboard: u64;
+
+        if board.board_color{
+            white_attack_bitboard = get_board_attack_mask(board, true);
+            black_attack_bitboard = board.attack_mask;
+        }
+        else{
+            white_attack_bitboard = board.attack_mask;
+            black_attack_bitboard = get_board_attack_mask(board, false);
+        }
+
+        // white_attack_bitboard = get_board_attack_mask(board, true);
+        // black_attack_bitboard = get_board_attack_mask(board, true);
+        
+        // print_board(board);
+
+        // print_bitboard(white_attack_bitboard);
+        // print_bitboard(black_attack_bitboard);
 
         // incentivises control over center and piece mobility
         score += get_attack_square_score(white_attack_bitboard, black_attack_bitboard, inv_endgame_weight);
 
-        score += king_safety_score(board, true, &ind_piece_attack_squares, inv_endgame_weight);
-        score -= king_safety_score(board, false, &ind_piece_attack_squares, inv_endgame_weight);
+        score += king_safety_score(board, true, inv_endgame_weight);
+        score -= king_safety_score(board, false, inv_endgame_weight);
+
+        // score += king_attack_unit_score(board, black_attack_bitboard, true, inv_endgame_weight);
+        // score -= king_attack_unit_score(board, white_attack_bitboard, false, inv_endgame_weight);
     }
     
     
