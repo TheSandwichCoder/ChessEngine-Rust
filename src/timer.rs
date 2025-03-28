@@ -40,6 +40,13 @@ impl Profiler{
 
     pub fn show(&self){
         println!("total: {}ms", self.time_taken.as_millis());
-        println!("average sample: {} ns", self.time_taken.as_nanos() / self.sample_count);
+
+        if self.sample_count != 0{
+            println!("average sample: {} ns", self.time_taken.as_nanos() / self.sample_count);
+        }
+        else{
+            println!("average sample: ZERO SAMPLES TAKEN");
+        }
+
     }
 }
