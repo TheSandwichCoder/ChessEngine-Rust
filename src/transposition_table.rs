@@ -113,13 +113,11 @@ impl TranspositionTable{
 
         let mut tt_entry = &mut self.table[table_index];
 
-        if tt_entry.hash != hash && table_index + 1 != TT_SIZE{
+        // the current slot is not occupied
+        if tt_entry.hash != 0 && tt_entry.hash != hash && table_index + 1 != TT_SIZE{
             tt_entry = &mut self.table[table_index + 1];
         }
         
-            // if tt_entry.hash != hash && tt_entry.hash != 0{
-            //     println!("overwrite");
-            // }
         if tt_entry.hash != hash && tt_entry.hash == 0{
             self.entry_num += 1;
         }

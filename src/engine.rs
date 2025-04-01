@@ -1002,6 +1002,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     let chess_board_repetition : u8 = add_to_game_tree(game_tree, chess_board.zobrist_hash) - 1;
 
     if chess_board_repetition >= 3{
+        remove_from_game_tree(game_tree, chess_board.zobrist_hash);
         return MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
     }
 
