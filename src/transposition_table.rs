@@ -126,10 +126,7 @@ impl TranspositionTable{
         tt_entry.score = score;
         tt_entry.info = node_type << 6 | depth;
         tt_entry.hash = hash;
-        tt_entry.best_move = best_move;
-
-        
-        
+        tt_entry.best_move = best_move;        
     }
 
     pub fn exceed_size(&self) -> bool{

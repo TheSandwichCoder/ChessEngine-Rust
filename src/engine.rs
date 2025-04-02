@@ -83,9 +83,14 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
     return weight;
 }
 
-fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard){
+fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, special_move: u16){
     for i in 0..move_buffer.index{
-        move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
+        if move_buffer.mv_arr[i] == special_move{
+            move_buffer.mv_weight_arr[i] = 100; // basically forced first
+        }
+        else{
+            move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
+        }        
     }
 }
 
@@ -1007,6 +1012,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     let tt_entry = transposition_table.get(true_hash);
 
+    let mut tt_mv: u16 = 0; 
+
     // extra check to make sure we have a valid collision
     if tt_entry.hash == true_hash{
         // larger / equal search
@@ -1030,6 +1037,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
                 return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
                 // debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             }
+
+            tt_mv = tt_entry.best_move;
         }
     }  
     
@@ -1110,7 +1119,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     }
 
     // gets the weights for the moves
-    update_move_buffer_weights(&mut move_buffer, chess_board);
+    update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv);
     
     for move_i in 0..move_buffer.index{
         order_move_buffer(&mut move_buffer, move_i);
@@ -1190,7 +1199,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
         return MoveScorePair::new(0, board_score, SCORE_EXACT_TYPE);
     }
 
-    update_move_buffer_weights(&mut move_buffer, chess_board);
+    update_move_buffer_weights(&mut move_buffer, chess_board, 0);
 
     for mv_i in 0.. move_buffer.index{
         order_move_buffer(&mut move_buffer, mv_i);
