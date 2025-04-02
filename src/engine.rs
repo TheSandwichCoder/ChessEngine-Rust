@@ -80,6 +80,17 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
         weight -= 1;
     }
 
+    let mv_info = mv >> 12;
+    
+    // pawn promotion
+    if mv_info >= 5 && mv_info <= 8{
+        weight += 2;
+        // specifically queen promotions
+        if mv_info == 8{
+            weight += 1;
+        }
+    }
+
     return weight;
 }
 
@@ -1001,7 +1012,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
     *node_counter += 1;
     
-    let chess_board_repetition : u8 = add_to_game_tree(game_tree, chess_board.zobrist_hash) - 1;
+    let chess_board_repetition : u8 = add_to_game_tree(game_tree, chess_board.zobrist_hash);
 
     if chess_board_repetition >= 3{
         remove_from_game_tree(game_tree, chess_board.zobrist_hash);
