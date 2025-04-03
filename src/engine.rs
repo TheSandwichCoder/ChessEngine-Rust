@@ -719,7 +719,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0);
+            get_best_move_negamax(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, 0);
         }
         else if flag == 1{
             
@@ -855,7 +855,7 @@ pub fn get_search_extention(board: &ChessBoard) -> bool{
     if board.check_mask != 0{
         return true;
     }
-    
+
     false
 }
 
@@ -923,7 +923,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             make_move(&mut sub_board, mv);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
 
             if timer.time_out(){
                 break;
@@ -999,8 +999,11 @@ const FUTILITY_MARGINS: [i16; 9] = [
 	520, // depth 8
 ];
 
+const SINGULAR_EXTENSION_DEPTH : u8 = 4;
+const SINGULAR_MOVE_MARGIN: i16 = 125;
 
-pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16) -> MoveScorePair{
+
+pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> MoveScorePair{
 
     // check every 2048 nodes if our time runs out
     // heavily inspired by the blunder engine
@@ -1023,13 +1026,16 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     
     let tt_entry = transposition_table.get(true_hash);
 
-    let mut tt_mv: u16 = 0; 
+    let mut tt_mv: u16 = 0;
+    let mut entry_type : u8 = 0;
+    let mut entry_score : i16 = 0;
 
     // extra check to make sure we have a valid collision
     if tt_entry.hash == true_hash{
         // larger / equal search
         if tt_entry.depth() >= depth{
-            let entry_type = tt_entry.entry_type();
+            entry_type = tt_entry.entry_type();
+            entry_score = tt_entry.score;
 
             if entry_type == EXACT_BOUND{
                 remove_from_game_tree(game_tree, chess_board.zobrist_hash);
@@ -1048,9 +1054,8 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
                 return MoveScorePair::new(0, tt_entry.score, SCORE_NOT_EXACT_TYPE);
                 // debug_log(&format!("({},{},{},{})", 3, tt_entry.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             }
-
-            tt_mv = tt_entry.best_move;
         }
+        tt_mv = tt_entry.best_move;
     }  
     
     
@@ -1132,19 +1137,49 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // gets the weights for the moves
     update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv);
     
-    for move_i in 0..move_buffer.index{
+    for move_i in 0..move_buffer.index{        
+
         order_move_buffer(&mut move_buffer, move_i);
 
         let mv = move_buffer.mv_arr[move_i];
+
+        if mv == skip_move{
+            continue;
+        }
         
         let mut sub_board: ChessBoard = chess_board.clone();
 
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
-        make_move(&mut sub_board, mv);
+        // Singular Extensions
+        if move_i == 0 && mv == tt_mv{
+            let mut next_depth = depth;
 
-        mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv);
+            if depth >= SINGULAR_EXTENSION_DEPTH && entry_type == EXACT_BOUND || entry_type == LOWER_BOUND{
+                let score_to_beat = entry_score - SINGULAR_MOVE_MARGIN;
+                let depth_reduction = 3 + depth / 6;
+                
+                let next_best_score = get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1 - depth_reduction, ply + 1, search_extention_counter, score_to_beat, score_to_beat+1, timer, node_counter, mv, mv);
+
+                if next_best_score.score <= score_to_beat {
+                    next_depth += 1;
+                }
+            }
+            
+            make_move(&mut sub_board, mv);
+
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, next_depth - 1, ply + 1, search_extention_counter + 1, -beta, -alpha, timer, node_counter, mv, 0);
+        }
+        else{
+            make_move(&mut sub_board, mv);
+
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
+        }
         
+
+
+
+         
         if mvel_pair.score >= beta{
             remove_from_game_tree(game_tree, chess_board.zobrist_hash);
 
@@ -1173,7 +1208,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
     }
 
-    if best_mvel_pair.is_exact{
+    if best_mvel_pair.is_exact && skip_move == 0{
         transposition_table.add(true_hash, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
     }
 
