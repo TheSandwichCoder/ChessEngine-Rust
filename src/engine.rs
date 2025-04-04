@@ -850,12 +850,63 @@ pub fn discredit_score(score: i16) -> i16{
     return score;
 }
 
+const ATTACKER_SCORE : [i8; 5] = [0, 2, 2, 4, 9];
+const DEFENDER_SCORE : [i8; 5] = [1, 2, 2, 3, 7];
+
+pub fn get_attack_defender_difference(board: &ChessBoard) -> i8{
+    let mut attack_defend_diff : i8 = 0;
+
+    let king_square: usize;
+    let side_offset: usize;
+
+    if board.board_color{
+        king_square = board.piece_bitboards[11].trailing_zeros() as usize;
+        side_offset = 6;
+    }
+    else{
+        king_square = board.piece_bitboards[5].trailing_zeros() as usize;
+        side_offset = 0;
+    }
+
+    let king_danger_squares = KING_DANGER_SQUARES_MASK[king_square];
+    
+    let king_rank = king_square / 8;
+
+    let mut attacker_counter: u8 = 0;
+    
+    // if the king is in the middle of the board, this is a waste of time
+    if king_rank >= 2 && king_rank <= 5{
+        return 0;
+    }
+    
+    // White -> white attacking
+    // Black -> black attacking
+
+    for piece_type in 7..11{
+        attack_defend_diff += (king_danger_squares & !board.attack_mask & board.piece_bitboards[piece_type - side_offset]).count_ones() as i8 * ATTACKER_SCORE[piece_type-6];
+    }
+
+    // White -> black defending
+    // Black -> white defending
+
+    for piece_type in 0..5{
+        attack_defend_diff -= (king_danger_squares & board.piece_bitboards[piece_type + side_offset]).count_ones() as i8 * DEFENDER_SCORE[piece_type];
+    }
+
+    return attack_defend_diff;
+}
+
 pub fn get_search_extention(board: &ChessBoard) -> bool{
     // if the enemy is in check
     if board.check_mask != 0{
         return true;
     }
 
+    if get_attack_defender_difference(board) > 7{
+        return true;
+    }
+
+    
     false
 }
 
