@@ -52,47 +52,59 @@ impl MoveWeightPair {
     }
 }
 
+const CAPTURE_MOVE_WEIGHTS : [[i8; 6];6]= [
+	[22, 15, 15, 12, 11, 10], // victim Pawn
+	[40, 22, 20, 15, 12, 20], // victim Knight
+	[40, 20, 22, 15, 12, 20], // victim Bishop
+	[50, 30, 30, 22, 15, 30], // victim Rook
+	[60, 40, 40, 30, 22, 40], // victim Queen
+
+	[0, 0, 0, 0, 0, 0], // victim King
+];
+
 fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
     let to_square: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
     let mut weight : i8 = 0;
 
     // is a piece capture
-    if board.all_piece_bitboard & 1<<to_square != 0{
-        weight += 1;
-
+    if (board.all_piece_bitboard & 1<<to_square) != 0{
         let from_square: usize = (mv & MOVE_DECODER_MASK) as usize;
 
-        let piece_captured: u8 = board.piece_array[to_square] % 6;
-        let piece_moved: u8 = board.piece_array[from_square] % 6;
+        let piece_captured: u8 = (board.piece_array[to_square] - 1) % 6;
+        let piece_moved: u8 = (board.piece_array[from_square] - 1) % 6;
 
-        if (piece_captured) > (piece_moved){
-            weight += 1;
-        }
+        if piece_moved == 255 || piece_captured == 255{
+            println!("{}", get_move_string(mv));
+            print_board_info(board);
+            print_bitboard(board.all_piece_bitboard);
+            print_bitboard(1 << to_square);
 
-        else{
-            // depending on how large the difference is
-            weight -= (piece_moved-piece_captured) as i8;
         }
+        
+
+        weight += CAPTURE_MOVE_WEIGHTS[piece_captured as usize][piece_moved as usize];
     }
 
     // going to an attacked square
     if board.attack_mask & (1 << to_square) != 0{
-        weight -= 1;
+        weight -= 20;
     }
 
     let mv_info = mv >> 12;
     
     // pawn promotion
     if mv_info >= 5 && mv_info <= 8{
-        weight += 2;
+        weight += 20;
         // specifically queen promotions
         if mv_info == 8{
-            weight += 1;
+            weight += 10;
         }
     }
 
     return weight;
 }
+
+const MAX_MOVE_WEIGHT: i8 = 127;
 
 fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, special_move: u16){
     for i in 0..move_buffer.index{
@@ -1203,7 +1215,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
         // Singular Extensions
-        if move_i == 0 && mv == tt_mv{
+        if move_i == 0 && mv == tt_mv && search_extention_counter <= MAX_SEARCH_EXTENSION{
             let mut next_depth = depth;
 
             if depth >= SINGULAR_EXTENSION_DEPTH && entry_type == EXACT_BOUND || entry_type == LOWER_BOUND{
