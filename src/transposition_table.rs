@@ -122,6 +122,9 @@ impl TranspositionTable{
             self.entry_num += 1;
         }
         
+        if depth < tt_entry.depth() && tt_entry.hash == hash{
+            return ;
+        }
 
         tt_entry.score = score;
         tt_entry.info = node_type << 6 | depth;

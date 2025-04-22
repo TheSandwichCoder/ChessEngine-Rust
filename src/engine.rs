@@ -292,7 +292,7 @@ pub fn chess_battle(){
 pub fn perft(board: &mut ChessBoard, depth: u16) -> u32{
     // base case
     if depth == 0{
-        get_board_score(&board);
+        // get_board_score(&board);
         return 1;
     }
 
@@ -723,6 +723,9 @@ pub fn position_bench(flag: u8){
         "r1b1k2r/2qn1ppp/2p5/p1b1pP2/1pN1P1n1/3B1N2/PPPBQ2P/R3K2R w KQkq - 0 15".to_string(),
     ];  
 
+    let mut total_node_counter = 0;
+    let mut total_time_taken = Duration::new(0, 0);
+
     for fen_pos in fen_pos_array{
         let mut game_board : GameChessBoard = fen_to_GameChessBoard(&fen_pos);
         
@@ -740,11 +743,13 @@ pub fn position_bench(flag: u8){
         }
 
         let time_taken = t_start.elapsed().as_millis();
-
+        total_time_taken += t_start.elapsed();
         
         println!("test: {} took: {}ms nds:{} nds/s: {}", fen_pos, time_taken, node_counter, node_counter as u128 /time_taken * 1000);
-        
+        total_node_counter += node_counter;
     }
+
+    println!("total: {} took: {}ms ave nds: {} ave nds/s: {}", total_node_counter, total_time_taken.as_millis(), total_node_counter / 20, total_node_counter as u128 / total_time_taken.as_millis() * 1000);
 }
 
 pub fn get_move_line(game_chess_board: &GameChessBoard) -> Vec<u16>{
@@ -1136,6 +1141,9 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
     // upper bound
     let mut tt_entry_type: u8 = UPPER_BOUND;
 
+    // the window is a null window
+    let is_null_window = beta - alpha == 1;
+
     let mut move_buffer = MoveBuffer::new();
 
     get_moves(chess_board, &mut move_buffer);
@@ -1144,7 +1152,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
 
     // extend search
-    if search_extention_counter < MAX_SEARCH_EXTENSION{
+    if search_extention_counter < MAX_SEARCH_EXTENSION && !is_null_window{
         if get_search_extention(chess_board){
             search_extention_counter += 1;
             depth += 1;
@@ -1215,10 +1223,11 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         let mut mvel_pair: MoveScorePair = MoveScorePair::new(0, 0, SCORE_EXACT_TYPE);
 
         // Singular Extensions
-        if move_i == 0 && mv == tt_mv && search_extention_counter <= MAX_SEARCH_EXTENSION{
+        if move_i == 0 && mv == tt_mv && search_extention_counter <= MAX_SEARCH_EXTENSION && !is_null_window{
             let mut next_depth = depth;
+            let mut next_search_extension = search_extention_counter;
 
-            if depth >= SINGULAR_EXTENSION_DEPTH && entry_type == EXACT_BOUND || entry_type == LOWER_BOUND{
+            if depth >= SINGULAR_EXTENSION_DEPTH && (entry_type == EXACT_BOUND || entry_type == LOWER_BOUND){
                 let score_to_beat = entry_score - SINGULAR_MOVE_MARGIN;
                 let depth_reduction = 3 + depth / 6;
                 
@@ -1226,17 +1235,22 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
                 if next_best_score.score <= score_to_beat {
                     next_depth += 1;
+                    next_search_extension += 1;
                 }
             }
             
             make_move(&mut sub_board, mv);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, next_depth - 1, ply + 1, search_extention_counter + 1, -beta, -alpha, timer, node_counter, mv, 0);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, next_depth - 1, ply + 1, next_search_extension, -beta, -alpha, timer, node_counter, mv, 0);
         }
         else{
             make_move(&mut sub_board, mv);
 
-            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
+            mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
+
+            if mvel_pair.score > alpha{
+                mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
+            }
         }
         
 
