@@ -1248,7 +1248,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
             mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
 
-            if mvel_pair.score > alpha{
+            if mvel_pair.score > alpha && !is_null_window{
                 mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
             }
         }
@@ -1263,8 +1263,11 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
             let ply_usize = ply as usize;
 
             mvel_pair.is_exact = SCORE_NOT_EXACT_TYPE;
-            transposition_table.add(true_hash, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mvel_pair.mv);
 
+            
+            transposition_table.add(true_hash, discredit_score(mvel_pair.score), depth, LOWER_BOUND, mv);
+            
+            
             // debug_log(&format!("({},{},{},{})", 2,mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             return mvel_pair;
         }
@@ -1285,8 +1288,10 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
         }
     }
 
-    if best_mvel_pair.is_exact && skip_move == 0{
+    if skip_move == 0{
+        // if !is_null_window{
         transposition_table.add(true_hash, discredit_score(best_mvel_pair.score), depth, tt_entry_type, best_mvel_pair.mv);
+        // }
     }
 
     remove_from_game_tree(game_tree, chess_board.zobrist_hash);
