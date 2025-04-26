@@ -1248,7 +1248,7 @@ pub fn get_best_move_negamax(chess_board: &mut ChessBoard, game_tree: &mut HashM
 
             mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
 
-            if mvel_pair.score > alpha && !is_null_window{
+            if mvel_pair.score > alpha && mvel_pair.score < beta && !is_null_window{
                 mvel_pair = -get_best_move_negamax(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
             }
         }
