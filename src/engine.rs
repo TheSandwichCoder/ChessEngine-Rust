@@ -750,41 +750,6 @@ pub fn position_bench(flag: u8){
     println!("total: {} took: {}ms ave nds: {} ave nds/s: {}", total_node_counter, total_time_taken.as_millis(), total_node_counter / 20, total_node_counter as u128 / total_time_taken.as_millis() * 1000);
 }
 
-pub fn get_move_line(game_chess_board: &GameChessBoard) -> Vec<u16>{
-    let mut chess_board_copy = game_chess_board.board.clone();
-
-    let mut move_line_vec : Vec<u16> = Vec::new();
-
-    let chess_board_repetition: u8 = get_position_counter(&game_chess_board.game_tree, chess_board_copy.zobrist_hash);
-
-    let true_hash = chess_board_copy.zobrist_hash ^ REPETITION_COUNT_HASHES[chess_board_repetition as usize];
-
-    let starting_tt = game_chess_board.transposition_table.get(true_hash);
-
-    make_move(&mut chess_board_copy, starting_tt.best_move);
-
-    move_line_vec.push(starting_tt.best_move);
-
-    for i in 0..starting_tt.depth()-1{
-        let chess_board_repetition: u8 = get_position_counter(&game_chess_board.game_tree, chess_board_copy.zobrist_hash);
-
-        if game_chess_board.transposition_table.contains(chess_board_copy.zobrist_hash){
-            let tt_entry = game_chess_board.transposition_table.get(chess_board_copy.zobrist_hash);
-
-            make_move(&mut chess_board_copy, tt_entry.best_move);
-            move_line_vec.push(tt_entry.best_move);
-
-        }
-
-        // couldnt find an entry (which should be strange but whatever)
-        else{
-            break;
-        }
-    }
-
-    return move_line_vec;
-}
-
 pub fn debug_print(s: &str, ply: u8){
     // Open a file with append option
     let mut data_file = fs::OpenOptions::new()
@@ -1069,6 +1034,10 @@ const FUTILITY_MARGINS: [i16; 9] = [
 const SINGULAR_EXTENSION_DEPTH : u8 = 4;
 const SINGULAR_MOVE_MARGIN: i16 = 125;
 
+const LMR_REDUCTION: u8 = 1;
+const LMR_MOVE_NUM: u8 = 3;
+const LMR_LEGAL_MOVE_NUM: u8 = 5;
+const LMR_DEPTH: u8 = 3;
 
 pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> i16{
 
@@ -1250,7 +1219,26 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
         else{
             make_move(&mut sub_board, mv);
 
-            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
+            let mut new_depth = depth;
+
+            // CONDITIONS
+            // 1. null window
+            // 2. depth
+            // 3. move index
+            // 4. number legal moves
+            // 5. tactical
+
+            if is_null_window && depth >= LMR_DEPTH && move_i as u8 >= LMR_MOVE_NUM && move_buffer.index as u8 > LMR_LEGAL_MOVE_NUM{
+
+                let is_tactical = chess_board.check_mask != 0 || is_promotion_mv(mv);
+
+                if !is_tactical{
+                    new_depth -= LMR_REDUCTION;
+                }
+
+            }
+
+            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, new_depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
 
             if move_score > alpha && move_score < beta && !is_null_window{
                 move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
@@ -1347,7 +1335,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
 }
 
 pub fn get_pv_line(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &TranspositionTable, depth: u8, ply: u8, pv_line: &mut [u16; 32]){
-    if depth == 0{
+    if depth == 0 || ply == 32{
         return 
     }
     

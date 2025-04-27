@@ -97,6 +97,16 @@ impl MoveBuffer{
     }
 }
 
+pub fn get_move_info(mv: u16) -> u16{
+    return mv >> 12;
+}
+
+pub fn is_promotion_mv(mv: u16) -> bool{
+    let move_info = get_move_info(mv);
+
+    return move_info >= 5 && move_info <=8;
+}
+
 const fn GET_PAWN_ATTACK_MASK(color: bool) -> [u64; 64]{
     let mut attack_array : [u64; 64] = [0; 64];
     let mut counter : u8 = 0;
