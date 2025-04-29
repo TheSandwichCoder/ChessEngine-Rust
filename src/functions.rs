@@ -223,3 +223,27 @@ pub fn add_to_move_line(move_line: &mut [u16; 32], mut index: usize, add_line: &
         index += 1;
     }
 }
+
+pub fn clamp(n: f32, min_val: f32, max_val: f32) -> f32{
+    if n < min_val{
+        return min_val;
+    }
+
+    if n > max_val{
+        return max_val;
+    }
+
+    return n;
+}
+
+pub fn clamp_int(n: i16, min_val: i16, max_val: i16) -> i16{
+    if n < min_val{
+        return min_val;
+    }
+
+    if n > max_val{
+        return max_val;
+    }
+
+    return n;
+}

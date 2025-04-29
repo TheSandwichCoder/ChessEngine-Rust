@@ -267,10 +267,6 @@ pub fn chess_battle(){
 
             game_make_move(&mut game_board, mvel_pair.mv);
 
-            // print_game_board(&game_board);
-            
-            // print_game_tree(&game_board);
-
             {
                 // update the fen position lookup
                 fs::write("FenPositionLookup.txt", format!("{}|{}", get_gamestate(&mut game_board), board_to_fen(&game_board.board)));
@@ -662,6 +658,22 @@ BATTLE MOVE LIMIT: {}
             
         }
 
+        else if input_string == "self battle"{
+            input_string.clear();
+            print!("think time(ms) >>");
+            io::stdout().flush().unwrap();
+            
+            io::stdin()
+            .read_line(&mut input_string)
+            .expect("Failed to read line");
+
+            let time_alloc: u32 = input_string.trim().parse().expect("cannot parse string to int");
+
+            self_battle(game_board, time_alloc);
+
+            println!("SELF BATTLE COMPLETE");
+        }
+
         else if input_string == "bench -best"{
             position_bench(0);
         }
@@ -749,6 +761,19 @@ pub fn position_bench(flag: u8){
 
     println!("total: {} took: {}ms ave nds: {} ave nds/s: {}", total_node_counter, total_time_taken.as_millis(), total_node_counter / 20, total_node_counter as u128 / total_time_taken.as_millis() * 1000);
 }
+
+pub fn self_battle(game_chess_board: &mut GameChessBoard, time_alloc: u32){
+    while get_gamestate(game_chess_board) == 0{
+        let best_move = get_best_move(game_chess_board, time_alloc);
+
+        game_make_move(game_chess_board, best_move.mv);
+
+        println!("move: {} {}", get_move_string(best_move.mv), best_move.score);
+
+        print_board(&game_chess_board.board);
+    }
+}
+
 
 pub fn debug_print(s: &str, ply: u8){
     // Open a file with append option
@@ -936,8 +961,6 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
         // Search Starts here
         let mut best_mvel_search_pair : MoveScorePair = MoveScorePair::new(0, -INF);
 
-        // debug_log(&"akjsdfkjs", 0);
-
         for mut mv_weight_pair in &mut move_vec_sorted{
             let mv = mv_weight_pair.mv;
 
@@ -992,9 +1015,9 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
                 let mut temp_board = chess_board.clone();
                 make_move(&mut temp_board, best_mvel.mv);
 
-                get_pv_line(&mut temp_board, game_tree, transposition_table, curr_depth - 1, 1, &mut pv_line);
+                // get_pv_line(&mut temp_board, game_tree, transposition_table, curr_depth - 1, 1, &mut pv_line);
 
-                print_pv_line(&pv_line);
+                // print_pv_line(&pv_line);
 
                 alpha = -INF;
                 beta = INF;
@@ -1036,7 +1059,7 @@ const SINGULAR_MOVE_MARGIN: i16 = 125;
 
 const LMR_REDUCTION: u8 = 1;
 const LMR_MOVE_NUM: u8 = 3;
-const LMR_LEGAL_MOVE_NUM: u8 = 5;
+const LMR_LEGAL_MOVE_NUM: u8 = 9;
 const LMR_DEPTH: u8 = 3;
 
 pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> i16{

@@ -333,22 +333,24 @@ pub fn reverse_piece_square_index(index: usize) -> usize{
 }
 
 
-// 1 when highest, 0 at lowest
+pub const PIECE_ENDGAME_WEIGHTS : [i16; 5] = [0, 1, 1, 2, 4];
+
+// 1.0 when highest, 0.0 at lowest
 pub fn get_endgame_weight(board: &ChessBoard) -> f32{
-    // let num_pieces = board.all_piece_bitboard.count_ones();
+    let mut phase : i16 = 12;
+    
+    for piece_bitboard_i in 0..12{
+        let piece_type: usize = piece_bitboard_i % 6;
 
-    let pawn_piece_bitboard = board.piece_bitboards[0] | board.piece_bitboards[6];
+        // dont want eval for king and pawns
+        if piece_type == 0 || piece_type == 5{
+            continue;
+        }
 
-    // all pieces except pawns
-    let important_piece_bitboard = board.all_piece_bitboard ^ pawn_piece_bitboard;
+        phase -= PIECE_ENDGAME_WEIGHTS[piece_type] * board.piece_bitboards[piece_bitboard_i].count_ones() as i16;
+    }
 
-    // pawns are half counted as the rest of the pieces
-    let num_pieces: f32 = pawn_piece_bitboard.count_ones() as f32 * 0.5 + important_piece_bitboard.count_ones() as f32;
-
-    // engame weight func - [(-n+24)/24]^2
-    let endgame_weight : f32 = (24.0-num_pieces) / 24.0;
-
-    return endgame_weight * endgame_weight;
+    return clamp_int(phase, 0, 12) as f32 / 12.0;
 }
 
 pub fn king_endgame_square_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
@@ -393,32 +395,15 @@ pub fn king_distance_weight(board: &ChessBoard, endgame_weight: f32) -> i16{
 }
 
 // eval based on piece value
-pub fn get_board_piece_value_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+pub fn get_board_piece_value_score(board: &ChessBoard) -> i16{
     let mut score: i16 = 0;
-
-    // only if this then we start lerping
-    if endgame_weight >= 0.3{
-        // skip the king
-        for i in 0..5{
-            let piece_num = board.piece_bitboards[i].count_ones() as i16;
-            score += lerp_int(PIECE_TYPE_VALUES[i], ENGAME_PIECE_TYPE_VALUES[i], endgame_weight) * piece_num;
-        }
-
-        for i in 6..11{
-            let piece_num = board.piece_bitboards[i].count_ones() as i16;
-            score += lerp_int(PIECE_TYPE_VALUES[i], ENGAME_PIECE_TYPE_VALUES[i], endgame_weight) * piece_num;
-        }
+    // skip the king
+    for i in 0..5{
+        score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
     }
 
-    else{
-        // skip the king
-        for i in 0..5{
-            score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
-        }
-
-        for i in 6..11{
-            score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
-        }
+    for i in 6..11{
+        score += (board.piece_bitboards[i].count_ones() as i16) * PIECE_TYPE_VALUES[i];
     }
     
     return score;
@@ -803,7 +788,7 @@ pub fn get_cheap_board_score(board: &ChessBoard) -> i16{
 
     let endgame_weight : f32 = get_endgame_weight(board); 
 
-    score += get_board_piece_value_score(board, endgame_weight);
+    score += get_board_piece_value_score(board);
 
     score += get_board_piece_square_score(board);
     
@@ -824,7 +809,7 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
     
     score += get_board_piece_square_score(board);
 
-    score += get_board_piece_value_score(board, endgame_weight);
+    score += get_board_piece_value_score(board);
 
     // prioritises pawn near end nearer to endgame
     score += get_pawn_piece_square_score(board, endgame_weight);
