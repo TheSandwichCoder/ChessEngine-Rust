@@ -763,8 +763,12 @@ pub fn position_bench(flag: u8){
 }
 
 pub fn self_battle(game_chess_board: &mut GameChessBoard, time_alloc: u32){
+    let mut move_vec : Vec<u16> = Vec::new();
+
     while get_gamestate(game_chess_board) == 0{
         let best_move = get_best_move(game_chess_board, time_alloc);
+
+        move_vec.push(best_move.mv);
 
         game_make_move(game_chess_board, best_move.mv);
 
@@ -772,6 +776,11 @@ pub fn self_battle(game_chess_board: &mut GameChessBoard, time_alloc: u32){
 
         print_board(&game_chess_board.board);
     }
+
+    for mv in &move_vec{
+        print!("{} ", get_move_string(*mv));
+    }
+    println!("");
 }
 
 

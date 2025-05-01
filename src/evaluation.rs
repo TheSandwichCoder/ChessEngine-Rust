@@ -518,7 +518,7 @@ pub fn get_vert_side_bitboards(x: u8) -> u64{
 }
 
 // give big bonuses to position with confirmed promoting pawns
-pub fn promoting_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+pub fn promoting_pawn_score(board: &ChessBoard, board_color: bool, endgame_weight: f32) -> i16{
     // has to be VERY deep endgame
     if endgame_weight != 1.0 {
         return 0;
@@ -536,17 +536,29 @@ pub fn promoting_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     if (white_pawn_bitboard | black_pawn_bitboard | white_king_bitboard | black_king_bitboard) == board.all_piece_bitboard{
         let mut white_pawn_temp = white_pawn_bitboard;
 
-        let black_king_square = black_king_bitboard.trailing_zeros() as u8;
+        let black_king_square = black_king_bitboard.trailing_zeros() as i8;
+
+        let white_color_offset: i8;
+        let black_color_offset: i8;
+        
+        if board_color{
+            black_color_offset = 0;
+            white_color_offset = 1;
+        }
+        else{
+            black_color_offset = 1;
+            white_color_offset = 0;
+        }
 
         while white_pawn_temp != 0{
             let pawn_square : usize = white_pawn_temp.trailing_zeros() as usize;
             
-            let pawn_x : u8 = pawn_square as u8 % 8;
-            let pawn_y : u8 = pawn_square as u8 / 8;
+            let pawn_x : i8 = pawn_square as i8 % 8;
+            let pawn_y : i8 = pawn_square as i8 / 8;
     
             let infront_bb: u64 = !0 >> (8 * (8-pawn_y));
     
-            let side_bb: u64 = get_vert_side_bitboards(pawn_x);
+            let side_bb: u64 = get_vert_side_bitboards(pawn_x as u8);
     
             let pawn_col_bb = (VERTICLE_SLICE_BITBOARD >> (7-pawn_x)) & infront_bb;
     
@@ -554,8 +566,9 @@ pub fn promoting_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     
             // the pawn is a pass pawn
             if (side_pawn_bb | pawn_col_bb) & black_pawn_bitboard == 0 && pawn_col_bb & white_pawn_bitboard == 0{
-                if (black_king_square / 8 > pawn_y) || ((black_king_square % 8) as i8 - pawn_x as i8).abs() as u8 > pawn_y{
+                if (black_king_square / 8 - black_color_offset > pawn_y) || (black_king_square % 8 - pawn_x).abs() - black_color_offset > pawn_y{
                     score += 300;
+                    break;
                 }
             }
     
@@ -564,17 +577,17 @@ pub fn promoting_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
 
         let mut black_pawn_temp = black_pawn_bitboard;
 
-        let white_king_square = white_king_bitboard.trailing_zeros() as u8;
+        let white_king_square = white_king_bitboard.trailing_zeros() as i8;
 
         while black_pawn_temp != 0{
             let pawn_square : usize = black_pawn_temp.trailing_zeros() as usize;        
             
-            let pawn_x : u8 = pawn_square as u8 % 8;
-            let pawn_y : u8 = pawn_square as u8 / 8;
+            let pawn_x : i8 = pawn_square as i8 % 8;
+            let pawn_y : i8 = pawn_square as i8 / 8;
     
             let infront_bb: u64 = !0 << (8 * (pawn_y+1));
     
-            let side_bb: u64 = get_vert_side_bitboards(pawn_x);
+            let side_bb: u64 = get_vert_side_bitboards(pawn_x as u8);
     
             // let is_accompanied = side_pawn_bitboard & black_pawn_bitboard != 0;
             // let is_supported = WHITE_PAWN_ATTACK_MASK[pawn_square] & black_pawn_bitboard != 0;
@@ -583,8 +596,9 @@ pub fn promoting_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
             let side_pawn_bb = side_bb & infront_bb;
     
             if (side_pawn_bb | pawn_col_bb) & white_pawn_bitboard == 0 && pawn_col_bb & black_pawn_bitboard == 0{
-                if (white_king_square / 8 < pawn_y) || ((white_king_square % 8) as i8 - pawn_x as i8).abs() as u8 > (7- pawn_y){
+                if (white_king_square / 8 + white_color_offset < pawn_y) || (white_king_square % 8 - pawn_x).abs() - white_color_offset > (7 - pawn_y){
                     score -= 300;
+                    break;
                 }
             }
             black_pawn_temp ^= 1 << pawn_square;
@@ -953,7 +967,7 @@ pub fn get_board_score(board: &ChessBoard) -> i16{
         score += bishop_knight_endgame_bias(board, false, endgame_weight);
 
         // promoting pawn bonus
-        score += promoting_pawn_score(board, endgame_weight);
+        score += promoting_pawn_score(board, board.board_color, endgame_weight);
     }
 
     
