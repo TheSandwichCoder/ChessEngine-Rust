@@ -665,6 +665,22 @@ pub fn pawn_surrounding_score(board: &ChessBoard, endgame_weight: f32) -> i16{
     return (score as f32 * endgame_weight) as i16;
 }
 
+pub fn king_support_pawn_score(board: &ChessBoard, endgame_weight: f32) -> i16{
+    let mut score: i16 = 0;
+
+    let white_pawn_bitboard : u64 = board.piece_bitboards[0];
+    let black_pawn_bitboard: u64 = board.piece_bitboards[6];
+    let white_king_square : usize = board.piece_bitboards[5].trailing_zeros() as usize;
+    let black_king_square : usize = board.piece_bitboards[11].trailing_zeros() as usize;
+
+    // println!("{}",(white_pawn_bitboard & KING_MOVE_MASK[white_king_square]).count_ones());
+
+    score += clamp_int((white_pawn_bitboard & KING_MOVE_MASK[white_king_square]).count_ones() as i16, 0, 3) * 20;
+    score -= clamp_int((black_pawn_bitboard & KING_MOVE_MASK[black_king_square]).count_ones() as i16, 0, 3) * 20;
+    
+    return int_float_mul(score, endgame_weight);
+}
+
 pub fn get_attack_square_score(mut white_attack_bitboard : u64, mut black_attack_bitboard: u64, inv_endgame_weight: f32) -> i16{
     let mut score : i16 = 0;
 
