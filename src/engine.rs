@@ -83,6 +83,73 @@ impl KillerMoveTable{
     }
 }
 
+pub struct HistoryHueristicTable{
+    // [color][from][to]
+    pub hh_table: [[[i16;64];64];2],
+}
+
+const MAX_HISTORY: i16 = 127;
+
+impl HistoryHueristicTable{
+    fn new() -> HistoryHueristicTable{
+        HistoryHueristicTable{
+            hh_table: [[[0;64];64];2]
+        }
+    }
+
+    fn clear(&mut self){
+        self.hh_table = [[[0;64];64];2];
+    }
+
+    fn update(&mut self, color: bool, mv: u16, bonus: i16){
+        let color_index : usize;
+
+        let from: usize = (mv & MOVE_DECODER_MASK) as usize;
+        let to: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
+        
+        if color{
+            color_index = 0;
+        }
+        else{
+            color_index = 1;
+        }
+
+        let clamped_bonus = clamp_int(bonus, -MAX_HISTORY, MAX_HISTORY);
+
+        let prev_value = self.hh_table[color_index][from][to];
+
+        let difference = clamped_bonus - (prev_value * clamped_bonus.abs()) / MAX_HISTORY;
+
+        self.hh_table[color_index][from][to] += difference;
+    }
+    
+    fn age(&mut self){
+        for color in 0..2{
+            for from in 0..64{
+                for to in 0..64{
+                    self.hh_table[color][from][to] /= 2;
+                }
+            }
+        }
+    }
+    
+    fn get(&self, color: bool, mv: u16) -> i16{
+        let color_index : usize;
+
+        let from: usize = (mv & MOVE_DECODER_MASK) as usize;
+        let to: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
+        
+        if color{
+            color_index = 0;
+        }
+        else{
+            color_index = 1;
+        }
+
+        return self.hh_table[color_index][from][to];
+    }
+}
+
 const CAPTURE_MOVE_WEIGHTS : [[i8; 6];6]= [
 	[22, 15, 15, 12, 11, 10], // victim Pawn
 	[40, 22, 20, 15, 12, 20], // victim Knight
@@ -98,7 +165,7 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
     let mut weight : i8 = 0;
 
     // is a piece capture
-    if (board.all_piece_bitboard & 1<<to_square) != 0{
+    if is_capture(mv, board){
         let from_square: usize = (mv & MOVE_DECODER_MASK) as usize;
 
         let piece_captured: u8 = (board.piece_array[to_square] - 1) % 6;
@@ -132,7 +199,7 @@ const TT_MOVE_MOVE_WEIGHT : i8 = 100;
 const FIRST_KILLER_MOVE_WEIGHT: i8 = 10;
 const SECOND_KILLER_MOVE_WEIGHT: i8 = 5;
 
-fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, tt_move: u16, first_killer: u16, second_killer: u16){
+fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, tt_move: u16, first_killer: u16, second_killer: u16, hh_table: &HistoryHueristicTable){
     for i in 0..move_buffer.index{
         let mv = move_buffer.mv_arr[i];
         
@@ -145,9 +212,26 @@ fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, 
         else if mv == second_killer{
             move_buffer.mv_weight_arr[i] = SECOND_KILLER_MOVE_WEIGHT;
         }
+
+        // quiet move
         else{
             move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
+
+            let hh = (hh_table.get(board.board_color, mv) / 2) as i8;
+            // println!("{}", hh);
+
+            move_buffer.mv_weight_arr[i] += hh;
         }        
+    }
+}
+
+// based only on capture move weights
+fn update_move_buffer_weights_quiescence(move_buffer: &mut MoveBuffer, board: &ChessBoard){
+    for i in 0..move_buffer.index{
+        let mv = move_buffer.mv_arr[i];
+
+        // quiet move
+        move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
     }
 }
 
@@ -780,7 +864,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            negamax_search(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, &mut KillerMoveTable::new(), 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, 0);
+            negamax_search(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, &mut KillerMoveTable::new(), &mut HistoryHueristicTable::new(), 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, 0);
         }
         else if flag == 1{
             
@@ -997,6 +1081,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     let mut node_counter = 0;
 
     let mut killer_mv_table = KillerMoveTable::new();
+    let mut hh_table = HistoryHueristicTable::new();
 
     while curr_depth < MAX_SEARCH_DEPTH{
         killer_mv_table.clear();
@@ -1017,7 +1102,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             make_move(&mut sub_board, mv);
 
-            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
+            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, &mut hh_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
 
             if timer.time_out(){
                 break;
@@ -1110,7 +1195,9 @@ const LMR_MOVE_NUM: u8 = 3;
 const LMR_LEGAL_MOVE_NUM: u8 = 9;
 const LMR_DEPTH: u8 = 3;
 
-pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, killer_mv_table: &mut KillerMoveTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> i16{
+const QUIET_MOVE_SCORE: i8 = 10;
+
+pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, killer_mv_table: &mut KillerMoveTable, hh_table: &mut HistoryHueristicTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> i16{
 
     // check every 2048 nodes if our time runs out
     // heavily inspired by the blunder engine
@@ -1252,7 +1339,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
     let (first_killer_mv, second_killer_mv) = killer_mv_table.get(ply); 
 
     // gets the weights for the moves
-    update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv, first_killer_mv, second_killer_mv);
+    update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv, first_killer_mv, second_killer_mv, hh_table);
     
     for move_i in 0..move_buffer.index{        
 
@@ -1277,7 +1364,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 let score_to_beat = entry_score - SINGULAR_MOVE_MARGIN;
                 let depth_reduction = 3 + depth / 6;
                 
-                let next_best_score = negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, depth - 1 - depth_reduction, ply + 1, search_extention_counter, score_to_beat, score_to_beat+1, timer, node_counter, mv, mv);
+                let next_best_score = negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, depth - 1 - depth_reduction, ply + 1, search_extention_counter, score_to_beat, score_to_beat+1, timer, node_counter, mv, mv);
 
                 if next_best_score <= score_to_beat {
                     next_depth += 1;
@@ -1287,7 +1374,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
             
             make_move(&mut sub_board, mv);
 
-            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, next_depth - 1, ply + 1, next_search_extension, -beta, -alpha, timer, node_counter, mv, 0);
+            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, next_depth - 1, ply + 1, next_search_extension, -beta, -alpha, timer, node_counter, mv, 0);
         }
         else{
             make_move(&mut sub_board, mv);
@@ -1310,10 +1397,10 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 }
             }
 
-            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, new_depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
+            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, new_depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
 
             if move_score > alpha && move_score < beta && !is_null_window{
-                move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
+                move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
             }
         }
                  
@@ -1322,9 +1409,27 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
             
             transposition_table.add(true_hash, discredit_score(move_score), depth, LOWER_BOUND, mv);
 
-            // move is unexpected
-            if move_buffer.mv_weight_arr[move_i] < 10{
+            // move is quiet
+            if move_buffer.mv_weight_arr[move_i] < QUIET_MOVE_SCORE{
                 killer_mv_table.store(mv, ply);
+
+                
+                let hh_bonus: i16 = 15 * depth as i16 - 10;
+                // let hh_bonus: i16 = 30 * depth - 25;        
+
+                hh_table.update(chess_board.board_color, mv, hh_bonus);
+
+                // history maluses
+                // penalise previous quiet moves
+                for sub_move_i in (0..move_i).rev(){
+                    if move_buffer.mv_weight_arr[sub_move_i] < QUIET_MOVE_SCORE{
+                        hh_table.update(chess_board.board_color, move_buffer.mv_arr[sub_move_i], -hh_bonus/2);
+                    }
+                    else{
+                        // since the list is sorted, we can break early
+                        break;
+                    }
+                }
             }
             
             
@@ -1383,7 +1488,7 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
         return board_score;
     }
 
-    update_move_buffer_weights(&mut move_buffer, chess_board, 0, 0, 0);
+    update_move_buffer_weights_quiescence(&mut move_buffer, chess_board);
 
     for mv_i in 0.. move_buffer.index{
         order_move_buffer(&mut move_buffer, mv_i);

@@ -107,6 +107,12 @@ pub fn is_promotion_mv(mv: u16) -> bool{
     return move_info >= 5 && move_info <=8;
 }
 
+pub fn is_capture(mv: u16, board: &ChessBoard) -> bool{
+    let to_square = (mv >> 6) & MOVE_DECODER_MASK;
+
+    return board.all_piece_bitboard & (1 << to_square) != 0;
+}
+
 const fn GET_PAWN_ATTACK_MASK(color: bool) -> [u64; 64]{
     let mut attack_array : [u64; 64] = [0; 64];
     let mut counter : u8 = 0;
