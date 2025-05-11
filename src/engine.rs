@@ -14,6 +14,7 @@ use crate::game_board::*;
 use crate::zobrist_hash::*;
 use crate::transposition_table::*;
 use crate::timer::*;
+use crate::history_heuristic::*;
 
 
 #[derive(Copy, Clone)]
@@ -80,73 +81,6 @@ impl KillerMoveTable{
         }
         
         return (self.killer_mvs[ply as usize][0], self.killer_mvs[ply as usize][1]);
-    }
-}
-
-pub struct HistoryHueristicTable{
-    // [color][from][to]
-    pub hh_table: [[[i16;64];64];2],
-}
-
-const MAX_HISTORY: i16 = 500;
-
-impl HistoryHueristicTable{
-    fn new() -> HistoryHueristicTable{
-        HistoryHueristicTable{
-            hh_table: [[[0;64];64];2]
-        }
-    }
-
-    fn clear(&mut self){
-        self.hh_table = [[[0;64];64];2];
-    }
-
-    fn update(&mut self, color: bool, mv: u16, bonus: i16){
-        let color_index : usize;
-
-        let from: usize = (mv & MOVE_DECODER_MASK) as usize;
-        let to: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
-        
-        if color{
-            color_index = 0;
-        }
-        else{
-            color_index = 1;
-        }
-
-        let clamped_bonus = clamp_int(bonus, -MAX_HISTORY, MAX_HISTORY);
-
-        let prev_value = self.hh_table[color_index][from][to];
-
-        let difference = clamped_bonus - (prev_value * clamped_bonus.abs()) / MAX_HISTORY;
-
-        self.hh_table[color_index][from][to] += difference;
-    }
-    
-    fn age(&mut self){
-        for color in 0..2{
-            for from in 0..64{
-                for to in 0..64{
-                    self.hh_table[color][from][to] /= 2;
-                }
-            }
-        }
-    }
-    
-    fn get(&self, color: bool, mv: u16) -> i16{
-        let color_index : usize;
-
-        let from: usize = (mv & MOVE_DECODER_MASK) as usize;
-        let to: usize = ((mv >> 6) & MOVE_DECODER_MASK) as usize;
-        
-        if color{
-            color_index = 0;
-        }
-        else{
-            color_index = 1;
-        }
-
-        return self.hh_table[color_index][from][to];
     }
 }
 
@@ -796,6 +730,10 @@ BATTLE MOVE LIMIT: {}
             println!("SELF BATTLE COMPLETE");
         }
 
+        else if input_string == "show hh_table"{
+            game_board.hh_table.show_compressed();
+        }
+
         else if input_string == "bench -best"{
             position_bench(0);
         }
@@ -1049,7 +987,7 @@ pub fn get_search_extention(board: &ChessBoard) -> bool{
 const INF: i16 = 32767;
 
 pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> MoveScorePair{
-    let best_move = iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, time_alloc);
+    let best_move = iterative_deepening(&mut game_chess_board.board, &mut game_chess_board.game_tree, &mut game_chess_board.transposition_table, &mut game_chess_board.hh_table, time_alloc);
 
     // println!("{}", get_move_line_vec_string(&get_move_line(game_chess_board)));
     return best_move;
@@ -1059,7 +997,7 @@ pub fn get_best_move(game_chess_board: &mut GameChessBoard, time_alloc: u32) -> 
 // 2Q2nk1/p4p1p/1p2rnp1/3p4/3P3q/BP6/P2N4/2K2R b - - - 
 
 // heavily inspired by pleco engine... again
-pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, time_alloc: u32) -> MoveScorePair{
+pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, hh_table: &mut HistoryHueristicTable, time_alloc: u32) -> MoveScorePair{
     let timer: Timer = Timer::new(Duration::from_millis(time_alloc as u64));
 
     let depth: u8 = 7;
@@ -1083,7 +1021,6 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     let mut node_counter = 0;
 
     let mut killer_mv_table = KillerMoveTable::new();
-    let mut hh_table = HistoryHueristicTable::new();
 
     while curr_depth < MAX_SEARCH_DEPTH{
         killer_mv_table.clear();
@@ -1104,7 +1041,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             make_move(&mut sub_board, mv);
 
-            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, &mut hh_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
+            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, hh_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
 
             if timer.time_out(){
                 break;
@@ -1422,8 +1359,6 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 // let hh_bonus: i16 = 30 * depth - 25;        
 
                 hh_table.update(chess_board.board_color, mv, hh_bonus);
-                
-                
             }
             
             
@@ -1432,7 +1367,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
         }
         else{
             if mv_is_quiet{
-                let hh_penalty: i16 = -5 * depth as i16;
+                let hh_penalty: i16 = -3 * depth as i16;
                 hh_table.update(chess_board.board_color, mv, hh_penalty);
             }
             

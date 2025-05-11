@@ -16,6 +16,7 @@ use game_board::*;
 use zobrist_hash::*;
 use timer::*;
 use transposition_table::*;
+use history_heuristic::*;
 
 mod board;
 mod move_compute;
@@ -26,6 +27,7 @@ mod evaluation;
 mod game_board;
 mod zobrist_hash;
 mod transposition_table;
+mod history_heuristic;
 
 mod app_settings;
 mod app_pieces;

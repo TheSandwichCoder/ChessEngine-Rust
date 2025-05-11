@@ -1,5 +1,6 @@
 use crate::board::*;
 use crate::transposition_table::TranspositionTable;
+use crate::history_heuristic::HistoryHueristicTable;
 use std::collections::HashMap;
 
 // a game board is used to hold the transposition table and move tree
@@ -10,6 +11,7 @@ pub struct GameChessBoard{
     pub board: ChessBoard,
     pub game_tree: HashMap<u64, u8>,
     pub transposition_table: TranspositionTable,
+    pub hh_table:  HistoryHueristicTable,
     pub move_limit: u16,
 }
 
@@ -19,6 +21,7 @@ impl Clone for GameChessBoard {
             board: self.board.clone(),
             game_tree: self.game_tree.clone(),
             transposition_table: self.transposition_table.clone(),
+            hh_table: self.hh_table.clone(),
             move_limit: 0,
         };
         
@@ -31,6 +34,7 @@ pub fn create_empty_GameChessBoard() -> GameChessBoard{
         board: create_empty_board(),
         game_tree: HashMap::new(),
         transposition_table: TranspositionTable::new(),
+        hh_table: HistoryHueristicTable::new(),
         move_limit: 0,
     }
 }
@@ -40,6 +44,7 @@ pub fn fen_to_GameChessBoard(s: &str) -> GameChessBoard{
         board: fen_to_board(s),
         game_tree: HashMap::new(),
         transposition_table: TranspositionTable::new(),
+        hh_table: HistoryHueristicTable::new(),
         move_limit: 0,
     };
 
