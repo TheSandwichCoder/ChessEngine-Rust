@@ -88,7 +88,7 @@ pub struct HistoryHueristicTable{
     pub hh_table: [[[i16;64];64];2],
 }
 
-const MAX_HISTORY: i16 = 127;
+const MAX_HISTORY: i16 = 500;
 
 impl HistoryHueristicTable{
     fn new() -> HistoryHueristicTable{
@@ -166,6 +166,7 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
 
     // is a piece capture
     if is_capture(mv, board){
+        // weight += 5;
         let from_square: usize = (mv & MOVE_DECODER_MASK) as usize;
 
         let piece_captured: u8 = (board.piece_array[to_square] - 1) % 6;
@@ -217,10 +218,12 @@ fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, 
         else{
             move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
 
-            let hh = (hh_table.get(board.board_color, mv) / 2) as i8;
+            let hh = hh_table.get(board.board_color, mv) / 35;
+
+            // let hh = clamp_int(hh_table.get(board.board_color, mv) / 20, -10, 10) as i8;
             // println!("{}", hh);
 
-            move_buffer.mv_weight_arr[i] += hh;
+            move_buffer.mv_weight_arr[i] += hh as i8;
         }        
     }
 }
@@ -230,8 +233,7 @@ fn update_move_buffer_weights_quiescence(move_buffer: &mut MoveBuffer, board: &C
     for i in 0..move_buffer.index{
         let mv = move_buffer.mv_arr[i];
 
-        // quiet move
-        move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
+        move_buffer.mv_weight_arr[i] = get_move_weight(mv, board);
     }
 }
 
@@ -1403,6 +1405,8 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
             }
         }
+
+        let mv_is_quiet = move_buffer.mv_weight_arr[move_i] < QUIET_MOVE_SCORE;
                  
         if move_score >= beta{
             remove_from_game_tree(game_tree, chess_board.zobrist_hash);
@@ -1410,32 +1414,30 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
             transposition_table.add(true_hash, discredit_score(move_score), depth, LOWER_BOUND, mv);
 
             // move is quiet
-            if move_buffer.mv_weight_arr[move_i] < QUIET_MOVE_SCORE{
+            if mv_is_quiet{
                 killer_mv_table.store(mv, ply);
 
                 
-                let hh_bonus: i16 = 15 * depth as i16 - 10;
+                let hh_bonus: i16 = 20 * depth as i16;
                 // let hh_bonus: i16 = 30 * depth - 25;        
 
                 hh_table.update(chess_board.board_color, mv, hh_bonus);
-
-                // history maluses
-                // penalise previous quiet moves
-                for sub_move_i in (0..move_i).rev(){
-                    if move_buffer.mv_weight_arr[sub_move_i] < QUIET_MOVE_SCORE{
-                        hh_table.update(chess_board.board_color, move_buffer.mv_arr[sub_move_i], -hh_bonus/2);
-                    }
-                    else{
-                        // since the list is sorted, we can break early
-                        break;
-                    }
-                }
+                
+                
             }
             
             
             // debug_log(&format!("({},{},{},{})", 2,mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             return move_score;
         }
+        else{
+            if mv_is_quiet{
+                let hh_penalty: i16 = -5 * depth as i16;
+                hh_table.update(chess_board.board_color, mv, hh_penalty);
+            }
+            
+        }
+        
 
         
         if move_score > best_score{
