@@ -52,16 +52,16 @@ impl MoveWeightPair {
 }
 
 pub struct KillerMoveTable{
-    pub killer_mvs: [[u16; 2]; 30],
+    pub killer_mvs: [u16; 30],
 }
 
 impl KillerMoveTable{
     fn new() -> KillerMoveTable{
-        KillerMoveTable{killer_mvs: [[0; 2]; 30]}
+        KillerMoveTable{killer_mvs: [0; 30]}
     }
 
     fn clear(&mut self){
-        self.killer_mvs = [[0; 2]; 30];
+        self.killer_mvs = [0; 30];
     }
 
     fn store(&mut self, mv: u16, ply: u8){
@@ -69,18 +69,41 @@ impl KillerMoveTable{
             return;
         }
 
-        if mv != self.killer_mvs[ply as usize][0]{
-            self.killer_mvs[ply as usize][1] = self.killer_mvs[ply as usize][0];
-            self.killer_mvs[ply as usize][0] = mv;
-        }
+        self.killer_mvs[ply as usize] = mv;
+        
     }
 
-    fn get(&self, ply: u8) -> (u16, u16){
-        if ply >= 30{
-            return (0, 0);
-        }
-        
-        return (self.killer_mvs[ply as usize][0], self.killer_mvs[ply as usize][1]);
+    fn get(&self, ply: u8) -> u16{
+        self.killer_mvs[ply as usize]
+    }
+}
+
+pub struct CounterMoveTable{
+    // counter_mvs[from][to]
+    pub counter_mvs: [[u16; 64]; 64],
+}
+
+impl CounterMoveTable{
+    fn new() -> CounterMoveTable{
+        CounterMoveTable{counter_mvs: [[0; 64]; 64]}
+    }
+
+    fn clear(&mut self){
+        self.counter_mvs = [[0; 64]; 64];
+    }
+
+    fn store(&mut self, mv_played: u16, counter_mv: u16){
+        let from: usize = (mv_played & MOVE_DECODER_MASK) as usize;
+        let to: usize = ((mv_played >> 6) & MOVE_DECODER_MASK) as usize;
+
+        self.counter_mvs[from][to] = counter_mv;
+    }
+
+    fn get(&self, mv_played: u16) -> u16{
+        let from: usize = (mv_played & MOVE_DECODER_MASK) as usize;
+        let to: usize = ((mv_played >> 6) & MOVE_DECODER_MASK) as usize;
+
+        return self.counter_mvs[from][to];
     }
 }
 
@@ -130,34 +153,37 @@ fn get_move_weight(mv: u16, board: &ChessBoard) -> i8{
 
 const MAX_MOVE_WEIGHT: i8 = 127;
 
-const TT_MOVE_MOVE_WEIGHT : i8 = 100;
-const FIRST_KILLER_MOVE_WEIGHT: i8 = 10;
-const SECOND_KILLER_MOVE_WEIGHT: i8 = 5;
+const TT_MOVE_MOVE_BONUS : i8 = 100;
+const FIRST_KILLER_MOVE_BONUS: i8 = 10;
+const SECOND_KILLER_MOVE_BONUS: i8 = 5;
 
-fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, tt_move: u16, first_killer: u16, second_killer: u16, hh_table: &HistoryHueristicTable){
+const COUNTER_MOVE_BONUS: i8 = 7;
+
+fn update_move_buffer_weights(move_buffer: &mut MoveBuffer, board: &ChessBoard, tt_move: u16, prev_mv: u16, first_killer: u16, counter_table: &CounterMoveTable, hh_table: &HistoryHueristicTable){
+    let counter_mv = counter_table.get(prev_mv);
+    
     for i in 0..move_buffer.index{
         let mv = move_buffer.mv_arr[i];
         
         if mv == tt_move{
-            move_buffer.mv_weight_arr[i] = TT_MOVE_MOVE_WEIGHT; // basically forced first
+            move_buffer.mv_weight_arr[i] = TT_MOVE_MOVE_BONUS; // basically forced first
         }
+
         else if mv == first_killer{
-            move_buffer.mv_weight_arr[i] = FIRST_KILLER_MOVE_WEIGHT;
-        }
-        else if mv == second_killer{
-            move_buffer.mv_weight_arr[i] = SECOND_KILLER_MOVE_WEIGHT;
+            move_buffer.mv_weight_arr[i] = FIRST_KILLER_MOVE_BONUS;
         }
 
         // quiet move
         else{
             move_buffer.mv_weight_arr[i] = get_move_weight(move_buffer.mv_arr[i], board);
 
-            let hh = hh_table.get(board.board_color, mv) / 35;
+            let hh_score = hh_table.get(board.board_color, mv) / 35;
 
-            // let hh = clamp_int(hh_table.get(board.board_color, mv) / 20, -10, 10) as i8;
-            // println!("{}", hh);
+            move_buffer.mv_weight_arr[i] += hh_score as i8;
 
-            move_buffer.mv_weight_arr[i] += hh as i8;
+            if mv == counter_mv{
+                move_buffer.mv_weight_arr[i] += COUNTER_MOVE_BONUS;
+            }
         }        
     }
 }
@@ -437,6 +463,7 @@ move special - make special move (pawn double, ep, promotion, castling)
 show moves - show possible moves
 show perft - show perft
 show eval - shows curr evaluation
+show hh_table - shows compressed history heuristic table
 update board - updates board
 endgame weight - endgameness of position
 debug z - debug zobrist
@@ -744,7 +771,7 @@ BATTLE MOVE LIMIT: {}
 
         else if input_string == "bench -single -perft"{
             
-            for perft_depth in 1..=5{
+            for perft_depth in 1..=6{
                 let t_start = Instant::now();
         
                 let node_num = perft(&mut game_board.board, perft_depth);
@@ -804,7 +831,7 @@ pub fn position_bench(flag: u8){
         let t_start = Instant::now();
         
         if flag == 0{
-            negamax_search(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, &mut KillerMoveTable::new(), &mut HistoryHueristicTable::new(), 5, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, 0);
+            negamax_search(&mut game_board.board, &mut game_board.game_tree, &mut game_board.transposition_table, &mut KillerMoveTable::new(), &mut CounterMoveTable::new(), &mut game_board.hh_table, 6, 0, 0, -INF, INF, &Timer::new(Duration::from_secs(10)), &mut node_counter, 0, 0);
         }
         else if flag == 1{
             
@@ -1021,6 +1048,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
     let mut node_counter = 0;
 
     let mut killer_mv_table = KillerMoveTable::new();
+    let mut counter_mv_table = CounterMoveTable::new();
 
     while curr_depth < MAX_SEARCH_DEPTH{
         killer_mv_table.clear();
@@ -1041,7 +1069,7 @@ pub fn iterative_deepening(chess_board: &mut ChessBoard, game_tree: &mut HashMap
 
             make_move(&mut sub_board, mv);
 
-            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, hh_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
+            let move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, &mut killer_mv_table, &mut counter_mv_table, hh_table, curr_depth - 1, 1, 0, -beta, -alpha, &timer, &mut node_counter, mv, 0);
 
             if timer.time_out(){
                 break;
@@ -1136,7 +1164,7 @@ const LMR_DEPTH: u8 = 3;
 
 const QUIET_MOVE_SCORE: i8 = 10;
 
-pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, killer_mv_table: &mut KillerMoveTable, hh_table: &mut HistoryHueristicTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_move: u16, skip_move: u16) -> i16{
+pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64, u8>, transposition_table: &mut TranspositionTable, killer_mv_table: &mut KillerMoveTable, counter_table: &mut CounterMoveTable , hh_table: &mut HistoryHueristicTable, mut depth: u8, ply: u8, mut search_extention_counter: u8, mut alpha: i16, mut beta: i16, timer: &Timer, node_counter: &mut u32, prev_mv: u16, skip_move: u16) -> i16{
 
     // check every 2048 nodes if our time runs out
     // heavily inspired by the blunder engine
@@ -1275,10 +1303,10 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
         return best_score;
     }
 
-    let (first_killer_mv, second_killer_mv) = killer_mv_table.get(ply); 
+    let first_killer_mv = killer_mv_table.get(ply); 
 
     // gets the weights for the moves
-    update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv, first_killer_mv, second_killer_mv, hh_table);
+    update_move_buffer_weights(&mut move_buffer, chess_board, tt_mv, prev_mv, first_killer_mv, counter_table, hh_table);
     
     for move_i in 0..move_buffer.index{        
 
@@ -1303,7 +1331,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 let score_to_beat = entry_score - SINGULAR_MOVE_MARGIN;
                 let depth_reduction = 3 + depth / 6;
                 
-                let next_best_score = negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, depth - 1 - depth_reduction, ply + 1, search_extention_counter, score_to_beat, score_to_beat+1, timer, node_counter, mv, mv);
+                let next_best_score = negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, counter_table, hh_table, depth - 1 - depth_reduction, ply + 1, search_extention_counter, score_to_beat, score_to_beat+1, timer, node_counter, mv, mv);
 
                 if next_best_score <= score_to_beat {
                     next_depth += 1;
@@ -1313,7 +1341,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
             
             make_move(&mut sub_board, mv);
 
-            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, next_depth - 1, ply + 1, next_search_extension, -beta, -alpha, timer, node_counter, mv, 0);
+            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, counter_table, hh_table, next_depth - 1, ply + 1, next_search_extension, -beta, -alpha, timer, node_counter, mv, 0);
         }
         else{
             make_move(&mut sub_board, mv);
@@ -1336,10 +1364,10 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 }
             }
 
-            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, new_depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
+            move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, counter_table, hh_table, new_depth - 1, ply + 1, search_extention_counter, -(alpha + 1), -alpha, timer, node_counter, mv, 0);
 
             if move_score > alpha && move_score < beta && !is_null_window{
-                move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, hh_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
+                move_score = -negamax_search(&mut sub_board, game_tree, transposition_table, killer_mv_table, counter_table, hh_table, depth - 1, ply + 1, search_extention_counter, -beta, -alpha, timer, node_counter, mv, 0);
             }
         }
 
@@ -1360,17 +1388,21 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
 
                 hh_table.update(chess_board.board_color, mv, hh_bonus);
             }
-            
-            
+
+            if !is_capture(mv, chess_board){
+                // print_board(chess_board);
+                // println!("{} {}", get_move_string(prev_mv), get_move_string(mv));
+                counter_table.store(prev_mv, mv);
+            }
+
             // debug_log(&format!("({},{},{},{})", 2,mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             return move_score;
         }
         else{
             if mv_is_quiet{
-                let hh_penalty: i16 = -3 * depth as i16;
+                let hh_penalty: i16 = -5 * depth as i16;
                 hh_table.update(chess_board.board_color, mv, hh_penalty);
             }
-            
         }
         
 
@@ -1394,7 +1426,7 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
 
     remove_from_game_tree(game_tree, chess_board.zobrist_hash);
 
-    // debug_log(&format!("({},{},{},{})", 0, best_mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
+    // debug_log(&format!("({},{},{},{})", 0, best_mvel_pair.score, get_move_string(prev_mv), chess_board.zobrist_hash), ply);
 
     return best_score;
 }
