@@ -1444,17 +1444,16 @@ pub fn quiescence_search(chess_board: &mut ChessBoard, mut alpha: i16, mut beta:
         alpha = stand_pat;
     }
     
-    let mut best_score = -INF;
+    let mut best_score = stand_pat;
 
     let mut move_buffer: MoveBuffer = MoveBuffer::new();
 
+    
     get_capture_moves(chess_board, &mut move_buffer);
 
     // no legal moves
     if move_buffer.index == 0 || depth == 0{
-        let board_score = get_board_score(chess_board);
-
-        return board_score;
+        return stand_pat;
     }
 
     update_move_buffer_weights_quiescence(&mut move_buffer, chess_board);
