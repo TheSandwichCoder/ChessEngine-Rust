@@ -59,6 +59,7 @@ pub struct Piece{
 pub struct GameSettings{
     pub engine_color: bool,
     pub starting_pos : String,
+    pub think_time: u32,
 }
 
 impl GameSettings{
@@ -66,6 +67,7 @@ impl GameSettings{
         GameSettings{
             engine_color: false,
             starting_pos: DEFAULT_FEN.to_string(),
+            think_time : DEFAULT_THINK_TIME as u32,
         }
     }
 }
@@ -79,7 +81,7 @@ struct ChessPieceAssets{
 struct ReceiveMoveTag(Mutex<Receiver<u16>>);
 
 #[derive(Resource)]
-struct SendBoardTag(Mutex<Sender<GameChessBoard>>);
+struct SendBoardTag(Mutex<Sender<(GameChessBoard, u32)>>);
 
 #[derive(Resource)]
 struct ReceiveMoveTag2(Mutex<Receiver<String>>);
@@ -106,19 +108,19 @@ impl Plugin for BoardPlugin{
     }
 }
 
-fn engine_move_handling() -> (Receiver<u16>, Sender<GameChessBoard>) {
+fn engine_move_handling() -> (Receiver<u16>, Sender<(GameChessBoard, u32)>) {
     let (tx, rx): (Sender<u16>, Receiver<u16>) = channel();
 
-    let (tx2, rx2): (Sender<GameChessBoard>, Receiver<GameChessBoard>) = channel();
+    let (tx2, rx2): (Sender<(GameChessBoard, u32)>, Receiver<(GameChessBoard, u32)>) = channel();
 
     thread::spawn(move || {
         loop {
             thread::sleep(time::Duration::from_millis(50));
-            if let Ok(mut game_chess_board) = rx2.try_recv() {
+            if let Ok((mut game_chess_board, think_time)) = rx2.try_recv() {
 
                 // if we changed when the bot is making a mv, we want to
 
-                let mv: MoveScorePair = get_best_move(&mut game_chess_board, DEFAULT_THINK_TIME as u32);
+                let mv: MoveScorePair = get_best_move(&mut game_chess_board, think_time);
 
                 print_move_command_debug(mv.mv);
 
@@ -241,8 +243,16 @@ fn update_game_settings(
             board.just_moved = true;
             board.requested_move = game_settings.engine_color == board.game_board.board.board_color;
             board.piece_selected_pos = IVec3::new(-1,-1,0);
-
-
+        }
+        else if cmd_type == 3{
+            board.game_board = fen_to_GameChessBoard(cmd_info);
+            board.piece_selected_pos = IVec3::new(-1,-1,0);
+            board.just_moved = true;
+            board.requested_move = false;
+            game_settings.engine_color = !board.game_board.board.board_color;
+        }
+        else if cmd_type == 4{
+            game_settings.think_time = cmd_info.parse().unwrap();
         }
 
         if cmd_type == 9{
@@ -619,12 +629,13 @@ fn player_move_piece(
 
 fn update_board_move(
     mut board_parent: Query<&mut BoardParent>,
+    game_settings: Res<GameSettings>,
     board_tx: Res<SendBoardTag>,
 ){
     let mut board_parent = board_parent.single_mut();
     
     if board_parent.requested_move{
         board_parent.requested_move = false;
-        board_tx.0.lock().unwrap().send(board_parent.game_board.clone()).unwrap();
+        board_tx.0.lock().unwrap().send((board_parent.game_board.clone(), game_settings.think_time)).unwrap();
     } 
 }
