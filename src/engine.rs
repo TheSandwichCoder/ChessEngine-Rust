@@ -1250,40 +1250,12 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
     get_moves(chess_board, &mut move_buffer);
 
     // extend search
-    if search_extention_counter < MAX_SEARCH_EXTENSION && !is_null_window{
+    if search_extention_counter < MAX_SEARCH_EXTENSION{
         if get_search_extention(chess_board){
             search_extention_counter += 1;
             depth += 1;
         }
     }
-
-    // Static move prunign
-    // if !in_check && beta.abs() < CHECKMATE_SCORE && !isPVNode{
-    //     let static_score = get_board_score(chess_board);
-
-    //     let score_margin = STATIC_MOVE_PRUNING_MARGIN * depth as i16;
-
-    //     if static_score - score_margin >= beta{
-    //         return MoveScorePair::new(0, static_score - score_margin, SCORE_NOT_EXACT_TYPE);;
-    //     }
-    // }
-
-    // razoring
-
-    // let in_check = chess_board.check_mask != 0;
-    
-    // if depth <= 2 && !in_check && !isPVNode{
-    //     let static_score = get_board_score(chess_board);
-
-    //     if static_score + FUTILITY_MARGINS[depth as usize] * 3 < alpha{
-    //         let score = quiescence_search(chess_board, alpha, beta, QUIESCENCE_DEPTH_LIMIT);
-
-    //         if score.score < alpha {
-    //             // println!("razor worked");
-	// 			return score;
-	// 		}
-    //     }
-    // }
 
     // no legal moves
     if move_buffer.index == 0{
@@ -1394,7 +1366,8 @@ pub fn negamax_search(chess_board: &mut ChessBoard, game_tree: &mut HashMap<u64,
                 // println!("{} {}", get_move_string(prev_mv), get_move_string(mv));
                 counter_table.store(prev_mv, mv);
             }
-
+            
+            
             // debug_log(&format!("({},{},{},{})", 2,mvel_pair.score, get_move_string(prev_move), chess_board.zobrist_hash), ply);
             return move_score;
         }

@@ -37,37 +37,37 @@ mod timer;
 struct replayText;
 
 fn main() {
-    App::new()
-    .add_plugins((
-        DefaultPlugins
-        .set(ImagePlugin::default_nearest())
-        .set(WindowPlugin {
-            primary_window: Some(Window{
-                title: "Rust Chess".into(),
-                resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
-                resizable:false,
-                enabled_buttons: bevy::window::EnabledButtons {
-                    maximize: false,
-                    ..Default::default()
-                },
-                ..default()
-            }),
-            ..default()
-        })
-        .build(),
-    ))
-    .init_state::<GameState>()
-    .add_plugins(BoardPlugin)
-    .add_systems(Startup, setup)
-    .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
-    .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
+    // App::new()
+    // .add_plugins((
+    //     DefaultPlugins
+    //     .set(ImagePlugin::default_nearest())
+    //     .set(WindowPlugin {
+    //         primary_window: Some(Window{
+    //             title: "Rust Chess".into(),
+    //             resolution: (SCREENSIZE.x, SCREENSIZE.y).into(),
+    //             resizable:false,
+    //             enabled_buttons: bevy::window::EnabledButtons {
+    //                 maximize: false,
+    //                 ..Default::default()
+    //             },
+    //             ..default()
+    //         }),
+    //         ..default()
+    //     })
+    //     .build(),
+    // ))
+    // .init_state::<GameState>()
+    // .add_plugins(BoardPlugin)
+    // .add_systems(Startup, setup)
+    // .add_systems(OnExit(GameState::Playing), show_game_over_screen_system)
+    // .add_systems(OnEnter(GameState::Playing), remove_game_over_screen_system)
 
-    .add_systems(Update, play_again_inputs)
-    .run();
+    // .add_systems(Update, play_again_inputs)
+    // .run();
 
-    // let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
+    let mut chess_board = fen_to_GameChessBoard(DEFAULT_FEN);
 
-    // debug(&mut chess_board);
+    debug(&mut chess_board);
 }
 
 // fen
